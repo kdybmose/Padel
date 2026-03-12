@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Padel Planner</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div>
+          <h1>🎾 Padel Planner</h1>
+          <p class="muted">GitHub Pages • login • historik • admin invitationer</p>
+        </div>
+        <div id="session" class="session hidden">
+          <span id="session-user"></span>
+          <button id="logout-btn" type="button">Log ud</button>
+        </div>
+      </header>
+
+      <section id="auth-view" class="card">
+        <h2>Log ind</h2>
+        <form id="login-form" class="form-grid">
+          <label>E-mail <input id="login-email" type="email" required /></label>
+          <label>Kodeord <input id="login-password" type="password" required /></label>
+          <button class="primary" type="submit">Log ind</button>
+        </form>
+
+        <details class="register-box">
+          <summary>Ny bruger? Opret konto med invitation</summary>
+          <form id="register-form" class="form-grid compact">
+            <label>E-mail <input id="register-email" type="email" required /></label>
+            <label>Invitationskode <input id="register-code" type="text" required /></label>
+            <label>Kodeord <input id="register-password" type="password" minlength="6" required /></label>
+            <button type="submit">Opret konto</button>
+          </form>
+          <p class="muted">Standard admin: <strong>admin@padel.local / admin123</strong>.</p>
+        </details>
+      </section>
+
+      <section id="app-view" class="hidden">
+        <section id="admin-panel" class="card hidden">
+          <h2>Admin: Inviter venner</h2>
+          <form id="invite-form" class="row">
+            <input id="invite-email" type="email" placeholder="ven@email.dk" required />
+            <select id="invite-role">
+              <option value="user">Bruger</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button type="submit">Opret invitation</button>
+          </form>
+          <ul id="invite-list" class="list"></ul>
+        </section>
+
+        <section class="card">
+          <h2>1) Deltagere</h2>
+          <form id="player-form" class="row">
+            <input id="player-input" type="text" placeholder="Navn" maxlength="30" required />
+            <button type="submit">Tilføj</button>
+            <button id="clear-players-btn" type="button">Ryd</button>
+          </form>
+          <ul id="player-list" class="chips"></ul>
+        </section>
+
+        <section class="card">
+          <h2>2) Kamp-indstillinger</h2>
+          <div class="row mobile-stack">
+            <label>Baner <input id="courts" type="number" min="1" max="8" value="1" /></label>
+            <label>Varighed (min) <input id="duration" type="number" min="10" max="120" value="25" /></label>
+            <label>Starttid <input id="start-time" type="time" value="10:00" /></label>
+          </div>
+          <div class="row">
+            <input id="tournament-name" type="text" placeholder="Turneringsnavn" />
+            <button id="generate-btn" class="primary" type="button">Generér og gem</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>3) Aktuel plan</h2>
+          <div id="schedule-empty" class="muted">Ingen plan endnu.</div>
+          <div id="schedule" class="schedule"></div>
+        </section>
+
+        <section class="card">
+          <h2>Historik</h2>
+          <div id="history-empty" class="muted">Ingen gemte turneringer.</div>
+          <ul id="history-list" class="list"></ul>
+        </section>
+      </section>
+    </main>
+
+    <template id="match-template">
+      <article class="match">
+        <div class="match-top"></div>
+        <div class="match-bottom"></div>
+      </article>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,65 @@
+:root {
+  --bg: #f3f6fb;
+  --card: #ffffff;
+  --text: #13253b;
+  --muted: #5f7082;
+  --border: #d9e3ee;
+  --accent: #0f9d58;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+.container { max-width: 960px; margin: 0 auto; padding: 1rem; }
+.header { display: flex; justify-content: space-between; gap: .75rem; align-items: start; margin-bottom: 1rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: 1rem; }
+h1, h2 { margin: 0 0 .5rem; }
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+
+.form-grid { display: grid; gap: .65rem; max-width: 420px; }
+.form-grid.compact { margin-top: .75rem; }
+.row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; }
+label { display: grid; gap: .2rem; color: var(--muted); font-weight: 600; }
+input, select, button {
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .62rem .75rem;
+}
+button { cursor: pointer; background: white; }
+button.primary { background: var(--accent); color: white; border-color: transparent; }
+.session { display: flex; gap: .5rem; align-items: center; }
+
+.chips, .list { list-style: none; margin: .75rem 0 0; padding: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.chips li {
+  background: #e8f4ed;
+  border: 1px solid #cbe7d8;
+  border-radius: 999px;
+  padding: .3rem .6rem;
+  display: inline-flex;
+  gap: .5rem;
+  align-items: center;
+}
+.chips li button { border: none; background: transparent; padding: 0; color: #8a2121; }
+
+.list { display: grid; gap: .5rem; }
+.list li { border: 1px solid var(--border); border-radius: 10px; padding: .6rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.list .actions { display: flex; gap: .4rem; }
+
+.schedule { display: grid; gap: .5rem; }
+.match { border: 1px solid var(--border); border-left: 6px solid var(--accent); border-radius: 10px; padding: .55rem .65rem; background: #fbfffc; }
+.match-top { font-weight: 700; }
+
+.register-box summary { cursor: pointer; }
+
+@media (max-width: 700px) {
+  .header { flex-direction: column; }
+  .mobile-stack { flex-direction: column; align-items: stretch; }
+  .list li { flex-direction: column; align-items: start; }
+}
