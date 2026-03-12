@@ -8,83 +8,36 @@
   --accent-2: #1f6feb;
 }
 
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: Inter, system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-}
-.container { max-width: 980px; margin: 0 auto; padding: 1rem; }
-.topbar { display: flex; justify-content: space-between; gap: 1rem; align-items: start; margin-bottom: 1rem; }
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-h1,h2 { margin: 0 0 .5rem; }
-.row { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
-.grid-form { display: grid; gap: .65rem; max-width: 460px; }
-label { display: grid; gap: .25rem; color: var(--muted); font-weight: 600; }
-input,select,button {
-  font: inherit;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: .6rem .75rem;
-}
-button { cursor: pointer; background: #fff; }
-button.primary { background: var(--accent); color: #fff; border-color: transparent; }
-button:hover { filter: brightness(.98); }
-.session-box { text-align: right; display: grid; gap: .35rem; }
-.player-list { list-style: none; margin: .75rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem; }
-.player-list li { background: #e9f6ef; border: 1px solid #cbe8d7; border-radius: 999px; padding: .3rem .65rem; display: inline-flex; gap: .45rem; }
-.player-list button { border: none; background: transparent; color: #8b1e1e; padding: 0; }
-.schedule { display: grid; gap: .5rem; }
-.match { border: 1px solid var(--border); border-left: 6px solid var(--accent); padding: .65rem; border-radius: 10px; background: #fcfffd; }
-.match-time { font-weight: 700; }
-.simple-list { list-style: none; padding: 0; margin: .75rem 0 0; display: grid; gap: .5rem; }
-.simple-list li { border: 1px solid var(--border); border-radius: 10px; padding: .6rem; display: flex; justify-content: space-between; gap: .7rem; align-items: center; }
-.actions { display: flex; gap: .4rem; }
-.muted { color: var(--muted); }
-.hidden { display: none !important; }
-summary { cursor: pointer; color: var(--accent-2); }
-.register-box { margin-top: .75rem; }
-
-@media (max-width: 680px) {
-  .topbar { flex-direction: column; }
-  .stacked-mobile { flex-direction: column; align-items: stretch; }
-  .simple-list li { flex-direction: column; align-items: start; }
-  color-scheme: light;
-  --bg: #f4f7fb;
-  --card: #ffffff;
-  --text: #12263a;
-  --muted: #5b6b7a;
-  --accent: #0f9d58;
-  --accent-dark: #0b7a44;
-  --border: #dce4ec;
-}
-
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: Inter, system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
 }
 
 .container {
-  max-width: 900px;
+  max-width: 980px;
   margin: 0 auto;
   padding: 1rem;
 }
 
-header {
-  text-align: center;
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
   margin-bottom: 1rem;
 }
 
@@ -93,86 +46,79 @@ h2 {
   margin: 0 0 0.5rem;
 }
 
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   align-items: end;
-  flex-wrap: wrap;
+}
+
+.grid-form {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 460px;
 }
 
 label {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 0.25rem;
-  font-weight: 600;
   color: var(--muted);
+  font-weight: 600;
 }
 
 input,
+select,
 button {
   font: inherit;
-  border-radius: 10px;
   border: 1px solid var(--border);
-  padding: 0.65rem 0.75rem;
-}
-
-input {
-  min-width: 110px;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
 }
 
 button {
   cursor: pointer;
-  background: white;
+  background: #fff;
 }
 
 button.primary {
   background: var(--accent);
-  color: white;
+  color: #fff;
   border-color: transparent;
-  margin-top: 0.75rem;
 }
 
-button.primary:hover {
-  background: var(--accent-dark);
+button:hover {
+  filter: brightness(0.98);
+}
+
+.session-box {
+  text-align: right;
+  display: grid;
+  gap: 0.35rem;
 }
 
 .player-list {
   list-style: none;
+  margin: 0.75rem 0 0;
   padding: 0;
-  margin: 0.75rem 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 .player-list li {
-  background: #e8f4ed;
-  border: 1px solid #c9e9d6;
+  background: #e9f6ef;
+  border: 1px solid #cbe8d7;
   border-radius: 999px;
-  padding: 0.35rem 0.7rem;
+  padding: 0.3rem 0.65rem;
   display: inline-flex;
-  gap: 0.5rem;
-  align-items: center;
+  gap: 0.45rem;
 }
 
-.player-list li button {
+.player-list button {
   border: none;
   background: transparent;
-  padding: 0;
   color: #8b1e1e;
-}
-
-.muted {
-  color: var(--muted);
-  font-size: 0.95rem;
+  padding: 0;
 }
 
 .schedule {
@@ -183,25 +129,67 @@ button.primary:hover {
 .match {
   border: 1px solid var(--border);
   border-left: 6px solid var(--accent);
-  background: #fcfffd;
-  border-radius: 10px;
   padding: 0.65rem;
-  display: grid;
-  gap: 0.2rem;
+  border-radius: 10px;
+  background: #fcfffd;
 }
 
 .match-time {
   font-weight: 700;
 }
 
-@media (max-width: 640px) {
+.simple-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.simple-list li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.hidden {
+  display: none !important;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--accent-2);
+}
+
+.register-box {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 680px) {
+  .topbar {
+    flex-direction: column;
+  }
+
   .stacked-mobile {
     flex-direction: column;
     align-items: stretch;
   }
 
-  #player-form {
+  .simple-list li {
     flex-direction: column;
-    align-items: stretch;
+    align-items: start;
   }
 }
