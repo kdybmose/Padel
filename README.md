@@ -1,42 +1,49 @@
-# Padel Planner (GitHub Pages)
+# Padel Turneringsplan (GitHub Pages)
 
-Ny version af appen med:
+Mobilvenlig webapp til padel-turnering med:
 
-- Login med roller: **admin** og **bruger**
-- Admin-invitationer via e-mail (med invitationskode)
-- Historik over gemte turneringer
-- Mobilvenlig UI
-- Deploy til GitHub Pages
+- Login (admin/bruger)
+- Invitationer via e-mail (admin)
+- Oprettelse og redigering af turneringer
+- Historik over gemte planer
 
-## Standard admin
+## Vigtigt om sikkerhed
 
-Ved første opstart oprettes:
+Denne løsning er **100% statisk** (GitHub Pages), så login/roller/historik gemmes i browserens `localStorage`.
+Det er fint til private/test-formål, men **ikke sikker produktion**.
+
+## Standard admin (første opstart)
 
 - E-mail: `admin@padel.local`
-- Kodeord: `admin123`
+- Kode: `admin123`
 
-## Kør lokalt
+## Lokal kørsel
 
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0
 ```
 
-## GitHub Pages deploy
+## Deploy på GitHub Pages
 
-1. Push repo til GitHub.
-2. Gå til **Settings → Pages**.
-3. Vælg **GitHub Actions** under build/deploy.
-4. Workflowet i `.github/workflows/deploy-pages.yml` deployer automatisk.
+1. Push koden til GitHub (fx branch `main`).
+2. Gå til repo → **Settings** → **Pages**.
+3. Under **Build and deployment**, vælg **GitHub Actions**.
+4. Workflowet i `.github/workflows/deploy-pages.yml` deployer automatisk ved push.
+5. Når workflowet er grønt, får du en URL som:
+   `https://<brugernavn>.github.io/<repo>/`
 
-## Invitation-flow
+## Invitationer (admin)
+
+Admin kan invitere venner på e-mail i appen:
 
 1. Log ind som admin.
-2. Opret invitation med e-mail + rolle.
-3. Appen genererer en **inviteringskode** og åbner mailklient (`mailto:`).
-4. Modtager opretter konto med e-mail + kode.
+2. Indtast e-mail og vælg rolle (admin/user).
+3. Klik **Send invitation**.
+4. Appen opretter invitationen og åbner din mailklient (`mailto`) med udfyldt besked.
 
-## Bemærkning om sikkerhed
+## Begrænsninger i GitHub Pages-setup
 
-Dette er stadig en statisk app på GitHub Pages.
-Data gemmes i browserens `localStorage`, så det er ikke en fuld backend-løsning.
-Vil du have rigtig sikker login + delt data mellem enheder, så skal der backend på (fx Supabase/Firebase).
+- Brugere/historik synkroniseres ikke mellem enheder automatisk (data er lokale pr. browser).
+- E-mailafsendelse sker via brugerens egen mailklient (ikke server-side udsendelse).
+
+Hvis du vil have “rigtig” login, delt historik på tværs af enheder og server-side mail, så skal vi koble appen på backend (fx Supabase/Firebase).
