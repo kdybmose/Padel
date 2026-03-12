@@ -83,44 +83,6 @@
           <div id="history-empty" class="muted">Ingen gemte planer endnu.</div>
           <ul id="history-list" class="simple-list"></ul>
         </section>
-      <header>
-        <h1>🎾 Padel Turneringsplan</h1>
-        <p>Lav en hurtig turnering, der virker på mobil.</p>
-      </header>
-
-      <section class="card">
-        <h2>1) Deltagere</h2>
-        <form id="player-form" class="row">
-          <input id="player-input" type="text" placeholder="Navn på spiller" maxlength="30" required />
-          <button type="submit">Tilføj</button>
-        </form>
-        <ul id="player-list" class="player-list"></ul>
-        <p class="muted">Tip: I kan være 4-16 spillere.</p>
-      </section>
-
-      <section class="card">
-        <h2>2) Indstillinger</h2>
-        <div class="row stacked-mobile">
-          <label>
-            Baner
-            <input id="courts" type="number" min="1" max="8" value="1" />
-          </label>
-          <label>
-            Kamp-varighed (min)
-            <input id="match-duration" type="number" min="10" max="120" value="25" />
-          </label>
-          <label>
-            Starttid
-            <input id="start-time" type="time" value="10:00" />
-          </label>
-        </div>
-        <button id="generate-btn" class="primary">Generér turneringsplan</button>
-      </section>
-
-      <section class="card">
-        <h2>3) Plan</h2>
-        <div id="schedule-empty" class="muted">Ingen plan endnu.</div>
-        <div id="schedule" class="schedule"></div>
       </section>
     </main>
 

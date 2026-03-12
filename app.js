@@ -45,36 +45,77 @@ const state = {
   }
 };
 
+function setVisible(node, visible) {
+  node.classList.toggle("hidden", !visible);
+}
+
+function getCurrentUser() {
+  if (!state.currentUserEmail) return null;
+  return state.users.find((u) => u.email === state.currentUserEmail) || null;
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function ensureAdminUser() {
+  if (!state.users.some((u) => u.email === "admin@padel.local")) {
+    state.users.push({
+      email: "admin@padel.local",
+      password: "admin123",
+      role: "admin"
+    });
+  }
+}
+
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return;
+  if (!raw) {
+    ensureAdminUser();
+    saveState();
+    return;
+  }
+
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.players)) state.players = parsed.players;
-    if (Array.isArray(parsed.schedule)) state.schedule = parsed.schedule;
+    if (Array.isArray(parsed.users)) state.users = parsed.users;
+    if (Array.isArray(parsed.invitations)) state.invitations = parsed.invitations;
+    if (Array.isArray(parsed.tournaments)) state.tournaments = parsed.tournaments;
+    if (typeof parsed.currentUserEmail === "string" || parsed.currentUserEmail === null) {
+      state.currentUserEmail = parsed.currentUserEmail;
+    }
+
+    if (parsed.draft && typeof parsed.draft === "object") {
+      state.draft.players = Array.isArray(parsed.draft.players) ? parsed.draft.players : [];
+      state.draft.settings = {
+        courts: Number(parsed.draft.settings?.courts) || 1,
+        duration: Number(parsed.draft.settings?.duration) || 25,
+        startTime: parsed.draft.settings?.startTime || "10:00"
+      };
+      state.draft.schedule = Array.isArray(parsed.draft.schedule) ? parsed.draft.schedule : [];
+    }
+
+    ensureAdminUser();
+    saveState();
   } catch {
     localStorage.removeItem(STORAGE_KEY);
+    ensureAdminUser();
+    saveState();
   }
 }
 
 function renderPlayers() {
   playerList.innerHTML = "";
-  state.players.forEach((name, index) => {
+  state.draft.players.forEach((name, index) => {
     const li = document.createElement("li");
     li.textContent = name;
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.textContent = "✕";
-    removeBtn.addEventListener("click", () => {
-      state.draft.players.splice(index, 1);
     removeBtn.setAttribute("aria-label", `Fjern ${name}`);
     removeBtn.addEventListener("click", () => {
-      state.players.splice(index, 1);
+      state.draft.players.splice(index, 1);
       saveState();
       renderPlayers();
     });
@@ -170,6 +211,23 @@ function renderInvitations() {
     });
 }
 
+function renderShell() {
+  const user = getCurrentUser();
+  const loggedIn = Boolean(user);
+
+  setVisible(authCard, !loggedIn);
+  setVisible(appCard, loggedIn);
+  setVisible(sessionBox, loggedIn);
+
+  if (!loggedIn) return;
+
+  sessionLabel.textContent = `${user.email} (${user.role})`;
+  setVisible(adminCard, user.role === "admin");
+  renderDraft();
+  renderHistory();
+  renderInvitations();
+}
+
 function login(email, password) {
   const user = state.users.find((u) => u.email === email && u.password === password);
   if (!user) {
@@ -213,7 +271,7 @@ function inviteByEmail(email, role) {
 
   const subject = encodeURIComponent("Invitation til Padel Turneringsplan");
   const body = encodeURIComponent(
-    `Hej!\n\nDu er inviteret som ${role} i Padel Turneringsplan.\nÅbn appen og opret konto med denne e-mail.\n\nMvh` 
+    `Hej!\n\nDu er inviteret som ${role} i Padel Turneringsplan.\nÅbn appen og opret konto med denne e-mail.\n\nMvh`
   );
   window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
 }
@@ -238,9 +296,6 @@ function buildRoundRobin(players) {
     for (let j = 0; j < names.length / 2; j += 1) {
       const a = names[j];
       const b = names[names.length - 1 - j];
-      if (a !== "BYE" && b !== "BYE") round.push([a, b]);
-    }
-    rounds.push(round);
       if (a !== "BYE" && b !== "BYE") {
         round.push([a, b]);
       }
@@ -261,7 +316,6 @@ function toPadelMatches(rounds) {
     for (let i = 0; i + 1 < round.length; i += 2) {
       const [p1, p2] = round[i];
       const [p3, p4] = round[i + 1];
-      matches.push({ teamA: `${p1} / ${p2}`, teamB: `${p3} / ${p4}` });
       matches.push({
         teamA: `${p1} / ${p2}`,
         teamB: `${p3} / ${p4}`
@@ -340,60 +394,6 @@ inviteForm.addEventListener("submit", (event) => {
   inviteByEmail(email, role);
   inviteForm.reset();
 });
-function generateSchedule() {
-  if (state.players.length < 4) {
-    alert("Tilføj mindst 4 spillere for at lave padel-kampe.");
-    return;
-  }
-
-  const startTime = startTimeInput.value || "10:00";
-  const [h, m] = startTime.split(":").map(Number);
-  let currentMinutes = h * 60 + m;
-
-  const courts = Math.max(1, Number(courtsInput.value) || 1);
-  const duration = Math.max(10, Number(matchDurationInput.value) || 25);
-
-  const rounds = buildRoundRobin(state.players);
-  const baseMatches = toPadelMatches(rounds);
-
-  if (baseMatches.length === 0) {
-    alert("Der kunne ikke laves gyldige kampe. Prøv med flere deltagere.");
-    return;
-  }
-
-  const scheduled = [];
-  for (let i = 0; i < baseMatches.length; i += 1) {
-    const slot = Math.floor(i / courts);
-    const court = (i % courts) + 1;
-
-    scheduled.push({
-      ...baseMatches[i],
-      court,
-      time: formatTime(currentMinutes + slot * duration)
-    });
-  }
-
-  state.schedule = scheduled;
-  saveState();
-  renderSchedule();
-}
-
-function renderSchedule() {
-  scheduleRoot.innerHTML = "";
-  if (!state.schedule.length) {
-    scheduleEmpty.style.display = "block";
-    return;
-  }
-
-  scheduleEmpty.style.display = "none";
-  state.schedule.forEach((match, index) => {
-    const node = matchTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector(".match-time").textContent = `Kamp ${index + 1} – ${match.time}`;
-    node.querySelector(".match-court").textContent = `Bane ${match.court}`;
-    node.querySelector(".match-teams").textContent = `${match.teamA} vs ${match.teamB}`;
-    scheduleRoot.appendChild(node);
-  });
-}
 
 playerForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -403,12 +403,8 @@ playerForm.addEventListener("submit", (event) => {
     alert("Spilleren findes allerede.");
     return;
   }
+
   state.draft.players.push(name);
-  if (state.players.includes(name)) {
-    alert("Denne spiller findes allerede.");
-    return;
-  }
-  state.players.push(name);
   playerInput.value = "";
   saveState();
   renderPlayers();
@@ -418,8 +414,3 @@ generateBtn.addEventListener("click", createTournamentSchedule);
 
 loadState();
 renderShell();
-generateBtn.addEventListener("click", generateSchedule);
-
-loadState();
-renderPlayers();
-renderSchedule();
