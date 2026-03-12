@@ -51,73 +51,19 @@ function saveState() {
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    seedAdmin();
-    return;
-  }
+  if (!raw) return;
   try {
     const parsed = JSON.parse(raw);
-    state.users = Array.isArray(parsed.users) ? parsed.users : [];
-    state.invitations = Array.isArray(parsed.invitations) ? parsed.invitations : [];
-    state.tournaments = Array.isArray(parsed.tournaments) ? parsed.tournaments : [];
-    state.currentUserEmail = typeof parsed.currentUserEmail === "string" ? parsed.currentUserEmail : null;
-    if (parsed.draft && typeof parsed.draft === "object") {
-      state.draft = {
-        players: Array.isArray(parsed.draft.players) ? parsed.draft.players : [],
-        settings: {
-          courts: Number(parsed.draft.settings?.courts || 1),
-          duration: Number(parsed.draft.settings?.duration || 25),
-          startTime: parsed.draft.settings?.startTime || "10:00"
-        },
-        schedule: Array.isArray(parsed.draft.schedule) ? parsed.draft.schedule : []
-      };
-    }
+    if (Array.isArray(parsed.players)) state.players = parsed.players;
+    if (Array.isArray(parsed.schedule)) state.schedule = parsed.schedule;
   } catch {
     localStorage.removeItem(STORAGE_KEY);
-    seedAdmin();
-    return;
   }
-
-  if (!state.users.length) {
-    seedAdmin();
-  }
-}
-
-function seedAdmin() {
-  state.users = [{ email: "admin@padel.local", password: "admin123", role: "admin" }];
-  state.invitations = [];
-  state.tournaments = [];
-  state.currentUserEmail = null;
-  state.draft = { players: [], settings: { courts: 1, duration: 25, startTime: "10:00" }, schedule: [] };
-  saveState();
-}
-
-function getCurrentUser() {
-  return state.users.find((u) => u.email === state.currentUserEmail) || null;
-}
-
-function setVisible(el, shouldShow) {
-  el.classList.toggle("hidden", !shouldShow);
-}
-
-function renderShell() {
-  const user = getCurrentUser();
-  setVisible(authCard, !user);
-  setVisible(appCard, Boolean(user));
-  setVisible(sessionBox, Boolean(user));
-
-  if (!user) return;
-
-  sessionLabel.textContent = `${user.email} (${user.role})`;
-  setVisible(adminCard, user.role === "admin");
-  renderDraft();
-  renderHistory();
-  renderInvitations();
 }
 
 function renderPlayers() {
   playerList.innerHTML = "";
-  state.draft.players.forEach((name, index) => {
+  state.players.forEach((name, index) => {
     const li = document.createElement("li");
     li.textContent = name;
 
@@ -126,6 +72,9 @@ function renderPlayers() {
     removeBtn.textContent = "✕";
     removeBtn.addEventListener("click", () => {
       state.draft.players.splice(index, 1);
+    removeBtn.setAttribute("aria-label", `Fjern ${name}`);
+    removeBtn.addEventListener("click", () => {
+      state.players.splice(index, 1);
       saveState();
       renderPlayers();
     });
@@ -283,6 +232,7 @@ function buildRoundRobin(players) {
 
   const rounds = [];
   const totalRounds = names.length - 1;
+
   for (let i = 0; i < totalRounds; i += 1) {
     const round = [];
     for (let j = 0; j < names.length / 2; j += 1) {
@@ -291,10 +241,17 @@ function buildRoundRobin(players) {
       if (a !== "BYE" && b !== "BYE") round.push([a, b]);
     }
     rounds.push(round);
+      if (a !== "BYE" && b !== "BYE") {
+        round.push([a, b]);
+      }
+    }
+    rounds.push(round);
+
     const fixed = names[0];
     const rotated = [fixed, names[names.length - 1], ...names.slice(1, names.length - 1)];
     names.splice(0, names.length, ...rotated);
   }
+
   return rounds;
 }
 
@@ -305,6 +262,10 @@ function toPadelMatches(rounds) {
       const [p1, p2] = round[i];
       const [p3, p4] = round[i + 1];
       matches.push({ teamA: `${p1} / ${p2}`, teamB: `${p3} / ${p4}` });
+      matches.push({
+        teamA: `${p1} / ${p2}`,
+        teamB: `${p3} / ${p4}`
+      });
     }
   });
   return matches;
@@ -379,6 +340,60 @@ inviteForm.addEventListener("submit", (event) => {
   inviteByEmail(email, role);
   inviteForm.reset();
 });
+function generateSchedule() {
+  if (state.players.length < 4) {
+    alert("Tilføj mindst 4 spillere for at lave padel-kampe.");
+    return;
+  }
+
+  const startTime = startTimeInput.value || "10:00";
+  const [h, m] = startTime.split(":").map(Number);
+  let currentMinutes = h * 60 + m;
+
+  const courts = Math.max(1, Number(courtsInput.value) || 1);
+  const duration = Math.max(10, Number(matchDurationInput.value) || 25);
+
+  const rounds = buildRoundRobin(state.players);
+  const baseMatches = toPadelMatches(rounds);
+
+  if (baseMatches.length === 0) {
+    alert("Der kunne ikke laves gyldige kampe. Prøv med flere deltagere.");
+    return;
+  }
+
+  const scheduled = [];
+  for (let i = 0; i < baseMatches.length; i += 1) {
+    const slot = Math.floor(i / courts);
+    const court = (i % courts) + 1;
+
+    scheduled.push({
+      ...baseMatches[i],
+      court,
+      time: formatTime(currentMinutes + slot * duration)
+    });
+  }
+
+  state.schedule = scheduled;
+  saveState();
+  renderSchedule();
+}
+
+function renderSchedule() {
+  scheduleRoot.innerHTML = "";
+  if (!state.schedule.length) {
+    scheduleEmpty.style.display = "block";
+    return;
+  }
+
+  scheduleEmpty.style.display = "none";
+  state.schedule.forEach((match, index) => {
+    const node = matchTemplate.content.firstElementChild.cloneNode(true);
+    node.querySelector(".match-time").textContent = `Kamp ${index + 1} – ${match.time}`;
+    node.querySelector(".match-court").textContent = `Bane ${match.court}`;
+    node.querySelector(".match-teams").textContent = `${match.teamA} vs ${match.teamB}`;
+    scheduleRoot.appendChild(node);
+  });
+}
 
 playerForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -389,6 +404,11 @@ playerForm.addEventListener("submit", (event) => {
     return;
   }
   state.draft.players.push(name);
+  if (state.players.includes(name)) {
+    alert("Denne spiller findes allerede.");
+    return;
+  }
+  state.players.push(name);
   playerInput.value = "";
   saveState();
   renderPlayers();
@@ -398,3 +418,8 @@ generateBtn.addEventListener("click", createTournamentSchedule);
 
 loadState();
 renderShell();
+generateBtn.addEventListener("click", generateSchedule);
+
+loadState();
+renderPlayers();
+renderSchedule();
