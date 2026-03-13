@@ -21,6 +21,7 @@ const courtTypeInput = document.getElementById("court-type");
 const ballsPerRoundInput = document.getElementById("balls-per-round");
 const tournamentNameInput = document.getElementById("tournament-name");
 const generateBtn = document.getElementById("generate-btn");
+const addRoundBtn = document.getElementById("add-round-btn");
 const completeBtn = document.getElementById("complete-btn");
 
 const scheduleRoot = document.getElementById("schedule");
@@ -124,9 +125,25 @@ function createDoublesMexicano(players) {
   ];
 }
 
+function createRoundPackage(players, mode) {
+  return mode === "double" ? createDoublesMexicano(players) : createSinglesMexicano(players);
+}
+
 function buildDraftMatches(players, mode) {
-  const baseMatches = mode === "double" ? createDoublesMexicano(players) : createSinglesMexicano(players);
-  return baseMatches.map((match) => ({ ...match, scoreA: null, scoreB: null }));
+  return createRoundPackage(players, mode).map((match) => ({ ...match, scoreA: null, scoreB: null }));
+}
+
+function appendRoundsToDraft() {
+  const nextRound = state.draft.matches.length + 1;
+  const extraMatches = createRoundPackage(state.draft.players, state.draft.mode).map((match, index) => ({
+    round: nextRound + index,
+    teamA: [...match.teamA],
+    teamB: [...match.teamB],
+    scoreA: null,
+    scoreB: null
+  }));
+
+  state.draft.matches.push(...extraMatches);
 }
 
 function getTournamentStandings(tournament) {
@@ -152,8 +169,18 @@ function getTournamentStandings(tournament) {
   });
 
   return [...map.values()]
-    .map((row) => ({ ...row, avgBallsPerMatch: row.matches ? Number((row.totalBallsWon / row.matches).toFixed(2)) : 0 }))
-    .sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.wins - a.wins || a.player.localeCompare(b.player, "da"));
+    .map((row) => ({
+      ...row,
+      avgBallsPerMatch: row.matches ? Number((row.totalBallsWon / row.matches).toFixed(2)) : 0,
+      ballDiff: row.totalBallsWon - row.totalBallsAgainst
+    }))
+    .sort(
+      (a, b) =>
+        b.wins - a.wins ||
+        b.ballDiff - a.ballDiff ||
+        b.totalBallsWon - a.totalBallsWon ||
+        a.player.localeCompare(b.player, "da")
+    );
 }
 
 function allResultsEntered() {
@@ -241,35 +268,58 @@ function renderSchedule() {
     teams.className = "match-teams";
     teams.textContent = `${getDisplayName(match.teamA)} vs ${getDisplayName(match.teamB)}`;
 
-    const scoreLabel = document.createElement("label");
-    scoreLabel.textContent = `${getDisplayName(match.teamA)} score`;
-    const input = document.createElement("input");
-    input.type = "number";
-    input.min = "0";
-    input.max = String(state.draft.ballsPerRound);
-    input.value = Number.isInteger(match.scoreA) ? String(match.scoreA) : "";
-    input.addEventListener("change", async () => {
-      const value = Number(input.value);
+    const scoreInputs = document.createElement("div");
+    scoreInputs.className = "match-score-inputs";
+
+    const scoreALabel = document.createElement("label");
+    scoreALabel.textContent = `${getDisplayName(match.teamA)} score`;
+    const inputA = document.createElement("input");
+    inputA.type = "number";
+    inputA.min = "0";
+    inputA.max = String(state.draft.ballsPerRound);
+    inputA.value = Number.isInteger(match.scoreA) ? String(match.scoreA) : "";
+    scoreALabel.appendChild(inputA);
+
+    const scoreBLabel = document.createElement("label");
+    scoreBLabel.textContent = `${getDisplayName(match.teamB)} score`;
+    const inputB = document.createElement("input");
+    inputB.type = "number";
+    inputB.min = "0";
+    inputB.max = String(state.draft.ballsPerRound);
+    inputB.value = Number.isInteger(match.scoreB) ? String(match.scoreB) : "";
+    scoreBLabel.appendChild(inputB);
+
+    const applyScore = async (changedInput, otherInput) => {
+      const value = Number(changedInput.value);
       if (!Number.isFinite(value) || value < 0 || value > state.draft.ballsPerRound) {
         alert(`Indtast et tal mellem 0 og ${state.draft.ballsPerRound}.`);
-        input.value = Number.isInteger(match.scoreA) ? String(match.scoreA) : "";
+        renderSchedule();
         return;
       }
-      match.scoreA = Math.round(value);
-      match.scoreB = state.draft.ballsPerRound - match.scoreA;
-      renderSchedule();
+
+      const rounded = Math.round(value);
+      const adjusted = state.draft.ballsPerRound - rounded;
+
+      changedInput.value = String(rounded);
+      otherInput.value = String(adjusted);
+
+      if (changedInput === inputA) {
+        match.scoreA = rounded;
+        match.scoreB = adjusted;
+      } else {
+        match.scoreB = rounded;
+        match.scoreA = adjusted;
+      }
+
       renderStandings();
       await saveActiveTournament();
-    });
-    scoreLabel.appendChild(input);
+    };
 
-    const autoScore = document.createElement("div");
-    autoScore.className = "muted";
-    autoScore.textContent = Number.isInteger(match.scoreB)
-      ? `${getDisplayName(match.teamB)} får automatisk ${match.scoreB}`
-      : `${getDisplayName(match.teamB)} bliver auto-beregnet`;
+    inputA.addEventListener("change", () => applyScore(inputA, inputB));
+    inputB.addEventListener("change", () => applyScore(inputB, inputA));
 
-    row.append(title, teams, scoreLabel, autoScore);
+    scoreInputs.append(scoreALabel, scoreBLabel);
+    row.append(title, teams, scoreInputs);
     scheduleRoot.appendChild(row);
   });
 }
@@ -277,7 +327,7 @@ function renderSchedule() {
 function renderStandings() {
   standingsRoot.innerHTML = "";
   setVisible(standingsEmpty, state.draft.matches.length === 0);
-  completeBtn.disabled = !allResultsEntered();
+  completeBtn.disabled = state.draft.matches.length === 0;
   if (!state.draft.matches.length) return;
 
   const standings = getTournamentStandings(state.draft);
@@ -383,9 +433,32 @@ async function generateMexicanoTournament() {
   await saveActiveTournament();
 }
 
+async function addRounds() {
+  state.draft.mode = courtTypeInput.value;
+  state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
+  state.draft.name = tournamentNameInput.value.trim() || `Mexicano ${new Date().toLocaleDateString("da-DK")}`;
+  if (!validateMexicanoSetup()) return;
+
+  if (!state.draft.matches.length) {
+    state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode);
+  } else {
+    appendRoundsToDraft();
+  }
+
+  renderSchedule();
+  renderStandings();
+  setActiveView("current");
+  await saveActiveTournament();
+}
+
 async function completeTournament() {
   if (!validateMexicanoSetup()) return;
-  if (!allResultsEntered()) return alert("Indtast resultater for alle runder før du afslutter.");
+  if (!state.draft.matches.length) return alert("Generér mindst én runde før du afslutter.");
+
+  if (!allResultsEntered()) {
+    const shouldComplete = confirm("Der mangler resultater i nogle runder. Vil du afslutte og gemme turneringen alligevel?");
+    if (!shouldComplete) return;
+  }
 
   const payload = {
     players: clone(state.draft.players),
@@ -448,6 +521,7 @@ playerForm.addEventListener("submit", async (event) => {
 });
 
 generateBtn.addEventListener("click", generateMexicanoTournament);
+addRoundBtn.addEventListener("click", addRounds);
 completeBtn.addEventListener("click", completeTournament);
 statsSortInput.addEventListener("change", renderAggregateStats);
 
