@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <h1>🎾 Padel Turneringsplan</h1>
-          <p class="muted">Login med roller, historik og invitationer.</p>
+          <p class="muted">Supabase Auth, roller, historik og invitationer.</p>
         </div>
         <div id="session-box" class="session-box hidden">
           <div id="session-label"></div>
@@ -34,7 +34,7 @@
             <label>Adgangskode <input id="register-password" type="password" minlength="6" required /></label>
             <button type="submit">Opret konto</button>
           </form>
-          <p class="muted">Første gang appen åbnes oprettes en standard admin: <strong>admin@padel.local / admin123</strong>.</p>
+          <p class="muted">Din e-mail skal være inviteret af en admin.</p>
         </details>
       </section>
 
@@ -50,7 +50,7 @@
             <button type="submit">Send invitation</button>
           </form>
           <ul id="invite-list" class="simple-list"></ul>
-          <p class="muted">Invitationen oprettes i systemet og åbner samtidig en e-mail-klient via <code>mailto:</code>.</p>
+          <p class="muted">Invitationsmail sendes via Supabase Auth SMTP-konfiguration.</p>
         </section>
 
         <section class="card">
@@ -94,6 +94,8 @@
       </article>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase.config.js"></script>
     <script src="app.js" defer></script>
   </body>
 </html>

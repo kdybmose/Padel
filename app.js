@@ -1,5 +1,3 @@
-const STORAGE_KEY = "padel-planner-v2";
-
 const authCard = document.getElementById("auth-card");
 const appCard = document.getElementById("app-card");
 const adminCard = document.getElementById("admin-card");
@@ -29,11 +27,13 @@ const matchTemplate = document.getElementById("match-template");
 const historyList = document.getElementById("history-list");
 const historyEmpty = document.getElementById("history-empty");
 
+const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
 const state = {
-  users: [],
+  currentUser: null,
+  currentProfile: null,
   invitations: [],
   tournaments: [],
-  currentUserEmail: null,
   draft: {
     players: [],
     settings: {
@@ -49,231 +49,12 @@ function setVisible(node, visible) {
   node.classList.toggle("hidden", !visible);
 }
 
-function getCurrentUser() {
-  if (!state.currentUserEmail) return null;
-  return state.users.find((u) => u.email === state.currentUserEmail) || null;
+function getRole() {
+  return state.currentProfile?.role || "user";
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function ensureAdminUser() {
-  if (!state.users.some((u) => u.email === "admin@padel.local")) {
-    state.users.push({
-      email: "admin@padel.local",
-      password: "admin123",
-      role: "admin"
-    });
-  }
-}
-
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    ensureAdminUser();
-    saveState();
-    return;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.users)) state.users = parsed.users;
-    if (Array.isArray(parsed.invitations)) state.invitations = parsed.invitations;
-    if (Array.isArray(parsed.tournaments)) state.tournaments = parsed.tournaments;
-    if (typeof parsed.currentUserEmail === "string" || parsed.currentUserEmail === null) {
-      state.currentUserEmail = parsed.currentUserEmail;
-    }
-
-    if (parsed.draft && typeof parsed.draft === "object") {
-      state.draft.players = Array.isArray(parsed.draft.players) ? parsed.draft.players : [];
-      state.draft.settings = {
-        courts: Number(parsed.draft.settings?.courts) || 1,
-        duration: Number(parsed.draft.settings?.duration) || 25,
-        startTime: parsed.draft.settings?.startTime || "10:00"
-      };
-      state.draft.schedule = Array.isArray(parsed.draft.schedule) ? parsed.draft.schedule : [];
-    }
-
-    ensureAdminUser();
-    saveState();
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    ensureAdminUser();
-    saveState();
-  }
-}
-
-function renderPlayers() {
-  playerList.innerHTML = "";
-  state.draft.players.forEach((name, index) => {
-    const li = document.createElement("li");
-    li.textContent = name;
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.textContent = "✕";
-    removeBtn.setAttribute("aria-label", `Fjern ${name}`);
-    removeBtn.addEventListener("click", () => {
-      state.draft.players.splice(index, 1);
-      saveState();
-      renderPlayers();
-    });
-
-    li.appendChild(removeBtn);
-    playerList.appendChild(li);
-  });
-}
-
-function renderSchedule() {
-  scheduleRoot.innerHTML = "";
-  if (!state.draft.schedule.length) {
-    setVisible(scheduleEmpty, true);
-    return;
-  }
-
-  setVisible(scheduleEmpty, false);
-  state.draft.schedule.forEach((match, index) => {
-    const node = matchTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector(".match-time").textContent = `Kamp ${index + 1} – ${match.time}`;
-    node.querySelector(".match-court").textContent = `Bane ${match.court}`;
-    node.querySelector(".match-teams").textContent = `${match.teamA} vs ${match.teamB}`;
-    scheduleRoot.appendChild(node);
-  });
-}
-
-function renderDraft() {
-  courtsInput.value = state.draft.settings.courts;
-  matchDurationInput.value = state.draft.settings.duration;
-  startTimeInput.value = state.draft.settings.startTime;
-  renderPlayers();
-  renderSchedule();
-}
-
-function renderHistory() {
-  const user = getCurrentUser();
-  historyList.innerHTML = "";
-  if (!user) return;
-
-  const visible = state.tournaments.filter((t) => user.role === "admin" || t.owner === user.email);
-  setVisible(historyEmpty, visible.length === 0);
-
-  visible
-    .slice()
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-    .forEach((tournament) => {
-      const li = document.createElement("li");
-      const title = document.createElement("div");
-      title.innerHTML = `<strong>${tournament.name}</strong><br><small>Opdateret: ${new Date(tournament.updatedAt).toLocaleString("da-DK")}</small>`;
-
-      const actions = document.createElement("div");
-      actions.className = "actions";
-
-      const loadBtn = document.createElement("button");
-      loadBtn.type = "button";
-      loadBtn.textContent = "Indlæs";
-      loadBtn.addEventListener("click", () => {
-        state.draft = JSON.parse(JSON.stringify(tournament.data));
-        saveState();
-        renderDraft();
-      });
-
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.textContent = "Omdøb";
-      editBtn.addEventListener("click", () => {
-        const name = prompt("Nyt navn", tournament.name);
-        if (!name) return;
-        tournament.name = name.trim();
-        tournament.updatedAt = new Date().toISOString();
-        saveState();
-        renderHistory();
-      });
-
-      actions.append(loadBtn, editBtn);
-      li.append(title, actions);
-      historyList.appendChild(li);
-    });
-}
-
-function renderInvitations() {
-  const user = getCurrentUser();
-  inviteList.innerHTML = "";
-  if (!user || user.role !== "admin") return;
-
-  state.invitations
-    .slice()
-    .reverse()
-    .forEach((invite) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<span><strong>${invite.email}</strong> (${invite.role})</span><small>${new Date(invite.createdAt).toLocaleString("da-DK")}</small>`;
-      inviteList.appendChild(li);
-    });
-}
-
-function renderShell() {
-  const user = getCurrentUser();
-  const loggedIn = Boolean(user);
-
-  setVisible(authCard, !loggedIn);
-  setVisible(appCard, loggedIn);
-  setVisible(sessionBox, loggedIn);
-
-  if (!loggedIn) return;
-
-  sessionLabel.textContent = `${user.email} (${user.role})`;
-  setVisible(adminCard, user.role === "admin");
-  renderDraft();
-  renderHistory();
-  renderInvitations();
-}
-
-function login(email, password) {
-  const user = state.users.find((u) => u.email === email && u.password === password);
-  if (!user) {
-    alert("Forkert login.");
-    return;
-  }
-
-  state.currentUserEmail = user.email;
-  saveState();
-  renderShell();
-}
-
-function register(email, password) {
-  const invitation = state.invitations.find((i) => i.email === email);
-  if (!invitation) {
-    alert("Du skal have en invitation fra en admin for at oprette konto.");
-    return;
-  }
-
-  if (state.users.some((u) => u.email === email)) {
-    alert("Brugeren findes allerede.");
-    return;
-  }
-
-  state.users.push({ email, password, role: invitation.role });
-  state.currentUserEmail = email;
-  saveState();
-  renderShell();
-}
-
-function inviteByEmail(email, role) {
-  if (state.invitations.some((i) => i.email === email)) {
-    alert("Denne e-mail er allerede inviteret.");
-    return;
-  }
-
-  const invite = { email, role, createdAt: new Date().toISOString() };
-  state.invitations.push(invite);
-  saveState();
-  renderInvitations();
-
-  const subject = encodeURIComponent("Invitation til Padel Turneringsplan");
-  const body = encodeURIComponent(
-    `Hej!\n\nDu er inviteret som ${role} i Padel Turneringsplan.\nÅbn appen og opret konto med denne e-mail.\n\nMvh`
-  );
-  window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+function setDraftFromTournament(data) {
+  state.draft = JSON.parse(JSON.stringify(data));
 }
 
 function formatTime(totalMinutes) {
@@ -296,9 +77,7 @@ function buildRoundRobin(players) {
     for (let j = 0; j < names.length / 2; j += 1) {
       const a = names[j];
       const b = names[names.length - 1 - j];
-      if (a !== "BYE" && b !== "BYE") {
-        round.push([a, b]);
-      }
+      if (a !== "BYE" && b !== "BYE") round.push([a, b]);
     }
     rounds.push(round);
 
@@ -316,16 +95,229 @@ function toPadelMatches(rounds) {
     for (let i = 0; i + 1 < round.length; i += 2) {
       const [p1, p2] = round[i];
       const [p3, p4] = round[i + 1];
-      matches.push({
-        teamA: `${p1} / ${p2}`,
-        teamB: `${p3} / ${p4}`
-      });
+      matches.push({ teamA: `${p1} / ${p2}`, teamB: `${p3} / ${p4}` });
     }
   });
   return matches;
 }
 
-function createTournamentSchedule() {
+function renderPlayers() {
+  playerList.innerHTML = "";
+  state.draft.players.forEach((name, index) => {
+    const li = document.createElement("li");
+    li.textContent = name;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "✕";
+    removeBtn.setAttribute("aria-label", `Fjern ${name}`);
+    removeBtn.addEventListener("click", () => {
+      state.draft.players.splice(index, 1);
+      renderPlayers();
+    });
+
+    li.appendChild(removeBtn);
+    playerList.appendChild(li);
+  });
+}
+
+function renderSchedule() {
+  scheduleRoot.innerHTML = "";
+  setVisible(scheduleEmpty, state.draft.schedule.length === 0);
+  state.draft.schedule.forEach((match, index) => {
+    const node = matchTemplate.content.firstElementChild.cloneNode(true);
+    node.querySelector(".match-time").textContent = `Kamp ${index + 1} – ${match.time}`;
+    node.querySelector(".match-court").textContent = `Bane ${match.court}`;
+    node.querySelector(".match-teams").textContent = `${match.teamA} vs ${match.teamB}`;
+    scheduleRoot.appendChild(node);
+  });
+}
+
+function renderDraft() {
+  courtsInput.value = state.draft.settings.courts;
+  matchDurationInput.value = state.draft.settings.duration;
+  startTimeInput.value = state.draft.settings.startTime;
+  renderPlayers();
+  renderSchedule();
+}
+
+async function loadProfile() {
+  if (!state.currentUser) {
+    state.currentProfile = null;
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, role")
+    .eq("id", state.currentUser.id)
+    .single();
+
+  if (error) {
+    alert(`Kunne ikke hente profil: ${error.message}`);
+    return;
+  }
+
+  state.currentProfile = data;
+}
+
+async function loadInvitations() {
+  if (!state.currentUser || getRole() !== "admin") {
+    state.invitations = [];
+    renderInvitations();
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("invitations")
+    .select("email, role, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    alert(`Kunne ikke hente invitationer: ${error.message}`);
+    return;
+  }
+
+  state.invitations = data || [];
+  renderInvitations();
+}
+
+function renderInvitations() {
+  inviteList.innerHTML = "";
+  state.invitations.forEach((invite) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span><strong>${invite.email}</strong> (${invite.role})</span><small>${new Date(invite.created_at).toLocaleString("da-DK")}</small>`;
+    inviteList.appendChild(li);
+  });
+}
+
+async function loadHistory() {
+  if (!state.currentUser) {
+    state.tournaments = [];
+    renderHistory();
+    return;
+  }
+
+  let query = supabase
+    .from("tournaments")
+    .select("id, owner_id, name, data, updated_at")
+    .order("updated_at", { ascending: false });
+
+  if (getRole() !== "admin") query = query.eq("owner_id", state.currentUser.id);
+
+  const { data, error } = await query;
+
+  if (error) {
+    alert(`Kunne ikke hente historik: ${error.message}`);
+    return;
+  }
+
+  state.tournaments = data || [];
+  renderHistory();
+}
+
+function renderHistory() {
+  historyList.innerHTML = "";
+  setVisible(historyEmpty, state.tournaments.length === 0);
+
+  state.tournaments.forEach((tournament) => {
+    const li = document.createElement("li");
+    const title = document.createElement("div");
+    title.innerHTML = `<strong>${tournament.name}</strong><br><small>Opdateret: ${new Date(tournament.updated_at).toLocaleString("da-DK")}</small>`;
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.textContent = "Indlæs";
+    loadBtn.addEventListener("click", () => {
+      setDraftFromTournament(tournament.data);
+      renderDraft();
+    });
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "Omdøb";
+    editBtn.addEventListener("click", async () => {
+      const name = prompt("Nyt navn", tournament.name);
+      if (!name) return;
+
+      const { error } = await supabase
+        .from("tournaments")
+        .update({ name: name.trim() })
+        .eq("id", tournament.id);
+
+      if (error) {
+        alert(`Kunne ikke omdøbe: ${error.message}`);
+        return;
+      }
+
+      await loadHistory();
+    });
+
+    actions.append(loadBtn, editBtn);
+    li.append(title, actions);
+    historyList.appendChild(li);
+  });
+}
+
+async function renderShell() {
+  const loggedIn = Boolean(state.currentUser);
+  setVisible(authCard, !loggedIn);
+  setVisible(appCard, loggedIn);
+  setVisible(sessionBox, loggedIn);
+
+  if (!loggedIn) return;
+
+  sessionLabel.textContent = `${state.currentProfile?.email || state.currentUser.email} (${getRole()})`;
+  setVisible(adminCard, getRole() === "admin");
+
+  renderDraft();
+  await loadHistory();
+  await loadInvitations();
+}
+
+async function isInvitedEmail(email) {
+  const { data, error } = await supabase.rpc("is_email_invited", { input_email: email });
+  if (error) {
+    alert(`Kunne ikke validere invitation: ${error.message}`);
+    return false;
+  }
+  return Boolean(data);
+}
+
+async function applyInvitationRole() {
+  const { error } = await supabase.rpc("apply_invitation_role");
+  if (error) alert(`Kunne ikke sætte rolle fra invitation: ${error.message}`);
+}
+
+async function inviteByEmail(email, role) {
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
+
+  const response = await fetch(`${window.SUPABASE_URL}/functions/v1/invite-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: window.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify({ email, role })
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    alert(result.error || "Kunne ikke sende invitation.");
+    return;
+  }
+
+  await loadInvitations();
+  alert("Invitation sendt.");
+}
+
+async function createTournamentSchedule() {
   if (state.draft.players.length < 4) {
     alert("Tilføj mindst 4 spillere.");
     return;
@@ -352,46 +344,58 @@ function createTournamentSchedule() {
     time: formatTime(startMinutes + Math.floor(i / state.draft.settings.courts) * state.draft.settings.duration)
   }));
 
-  const user = getCurrentUser();
-  const timestamp = new Date().toISOString();
-  state.tournaments.push({
-    id: crypto.randomUUID(),
-    owner: user.email,
-    name: `Turnering ${new Date(timestamp).toLocaleDateString("da-DK")}`,
-    updatedAt: timestamp,
+  const { error } = await supabase.from("tournaments").insert({
+    owner_id: state.currentUser.id,
+    name: `Turnering ${new Date().toLocaleDateString("da-DK")}`,
     data: JSON.parse(JSON.stringify(state.draft))
   });
 
-  saveState();
+  if (error) {
+    alert(`Kunne ikke gemme turnering: ${error.message}`);
+    return;
+  }
+
   renderSchedule();
-  renderHistory();
+  await loadHistory();
 }
 
-loginForm.addEventListener("submit", (event) => {
+loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.getElementById("login-email").value.trim().toLowerCase();
   const password = document.getElementById("login-password").value;
-  login(email, password);
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) alert(`Forkert login: ${error.message}`);
 });
 
-registerForm.addEventListener("submit", (event) => {
+registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.getElementById("register-email").value.trim().toLowerCase();
   const password = document.getElementById("register-password").value;
-  register(email, password);
+
+  if (!(await isInvitedEmail(email))) {
+    alert("Du skal have en invitation fra en admin for at oprette konto.");
+    return;
+  }
+
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) {
+    alert(`Kunne ikke oprette konto: ${error.message}`);
+    return;
+  }
+
+  alert("Konto oprettet. Tjek evt. din e-mail for bekræftelse.");
 });
 
-logoutBtn.addEventListener("click", () => {
-  state.currentUserEmail = null;
-  saveState();
-  renderShell();
+logoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
 });
 
-inviteForm.addEventListener("submit", (event) => {
+inviteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.getElementById("invite-email").value.trim().toLowerCase();
   const role = document.getElementById("invite-role").value;
-  inviteByEmail(email, role);
+  await inviteByEmail(email, role);
   inviteForm.reset();
 });
 
@@ -406,11 +410,30 @@ playerForm.addEventListener("submit", (event) => {
 
   state.draft.players.push(name);
   playerInput.value = "";
-  saveState();
   renderPlayers();
 });
 
 generateBtn.addEventListener("click", createTournamentSchedule);
 
-loadState();
-renderShell();
+supabase.auth.onAuthStateChange(async (_, session) => {
+  state.currentUser = session?.user || null;
+  if (state.currentUser) {
+    await applyInvitationRole();
+    await loadProfile();
+  } else {
+    state.currentProfile = null;
+  }
+  await renderShell();
+});
+
+(async () => {
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
+  state.currentUser = session?.user || null;
+  if (state.currentUser) {
+    await applyInvitationRole();
+    await loadProfile();
+  }
+  await renderShell();
+})();
