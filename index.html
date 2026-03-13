@@ -11,18 +11,20 @@
       <header class="topbar">
         <div>
           <h1>🎾 Padel Mexicano</h1>
-          <p class="muted">Supabase Auth, invitationer og Mexicano turneringer.</p>
-        </div>
-        <div id="session-box" class="session-box hidden">
-          <div id="session-label"></div>
-          <button id="logout-btn" type="button">Log ud</button>
+          <p class="muted">Mexicano turneringer uden login (lokalt i browseren).</p>
         </div>
       </header>
 
       <section id="public-changelog" class="card">
         <h2>Versionshistorik</h2>
-        <p class="muted">Her kan du se de seneste ændringer med dato – også før du logger ind.</p>
+        <p class="muted">Her kan du se de seneste ændringer med dato.</p>
         <ul class="simple-list changelog-list">
+          <li>
+            <div>
+              <strong>13.03.2026 · v1.0.3</strong><br />
+              Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage.
+            </div>
+          </li>
           <li>
             <div>
               <strong>13.03.2026 · v1.0.2</strong><br />
@@ -43,29 +45,7 @@
           </li>
         </ul>
       </section>
-
-      <section id="auth-card" class="card">
-        <h2>Log ind</h2>
-        <p class="muted">Admin bootstrap: <strong>dybmose@hotmail.com</strong> kan oprette konto uden invitation.</p>
-        <p id="auth-feedback" class="auth-feedback hidden" role="status" aria-live="polite"></p>
-        <form id="login-form" class="grid-form" method="post">
-          <label>E-mail <input id="login-email" type="email" required /></label>
-          <label>Adgangskode <input id="login-password" type="password" required /></label>
-          <button type="submit" class="primary">Log ind</button>
-        </form>
-
-        <details class="register-box">
-          <summary>Ingen konto? Opret bruger via invitation</summary>
-          <form id="register-form" class="grid-form" method="post">
-            <label>E-mail <input id="register-email" type="email" required /></label>
-            <label>Adgangskode <input id="register-password" type="password" minlength="10" required /></label>
-            <button type="submit">Opret konto</button>
-          </form>
-          <p class="muted">Din e-mail skal være inviteret af en admin.</p>
-        </details>
-      </section>
-
-      <section id="app-card" class="hidden">
+      <section id="app-card">
         <section id="admin-card" class="card hidden">
           <h2>Admin: inviter spillere</h2>
           <form id="invite-form" class="row" method="post">
@@ -176,8 +156,6 @@
       </section>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase.config.js"></script>
     <script src="app.js" defer></script>
   </body>
 </html>

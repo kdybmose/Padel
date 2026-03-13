@@ -1,19 +1,6 @@
-const authCard = document.getElementById("auth-card");
 const appCard = document.getElementById("app-card");
 const adminCard = document.getElementById("admin-card");
 const adminPlayerCard = document.getElementById("admin-player-card");
-const adminPlayerList = document.getElementById("admin-player-list");
-const adminPlayerEmpty = document.getElementById("admin-player-empty");
-const sessionBox = document.getElementById("session-box");
-const sessionLabel = document.getElementById("session-label");
-const logoutBtn = document.getElementById("logout-btn");
-
-const loginForm = document.getElementById("login-form");
-const registerForm = document.getElementById("register-form");
-const authFeedback = document.getElementById("auth-feedback");
-
-const inviteForm = document.getElementById("invite-form");
-const inviteList = document.getElementById("invite-list");
 
 const homeViewBtn = document.getElementById("home-view-btn");
 const currentViewBtn = document.getElementById("current-view-btn");
@@ -47,14 +34,13 @@ const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
 
-const ADMIN_BOOTSTRAP_EMAIL = "dybmose@hotmail.com";
-
-const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+const STORAGE_KEYS = {
+  savedPlayers: "padel_saved_players",
+  tournaments: "padel_tournaments",
+  draft: "padel_active_draft"
+};
 
 const state = {
-  currentUser: null,
-  currentProfile: null,
-  invitations: [],
   savedPlayers: [],
   tournaments: [],
   activeView: "home",
@@ -67,26 +53,8 @@ const state = {
   }
 };
 
-function setAuthFeedback(message, type = "error") {
-  if (!authFeedback) return;
-  authFeedback.textContent = message || "";
-  authFeedback.classList.remove("hidden", "is-error", "is-success", "is-info");
-  authFeedback.classList.add(`is-${type}`);
-}
-
-function clearAuthFeedback() {
-  if (!authFeedback) return;
-  authFeedback.textContent = "";
-  authFeedback.classList.add("hidden");
-  authFeedback.classList.remove("is-error", "is-success", "is-info");
-}
-
 function setVisible(node, visible) {
   node.classList.toggle("hidden", !visible);
-}
-
-function getRole() {
-  return state.currentProfile?.role || "user";
 }
 
 function clone(data) {
@@ -95,6 +63,19 @@ function clone(data) {
 
 function getDisplayName(team) {
   return team.join(" / ");
+}
+
+function saveToStorage(key, data) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+function loadFromStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function setActiveView(view) {
@@ -113,19 +94,13 @@ function updateDraftInputs() {
 }
 
 async function saveActiveTournament() {
-  if (!state.currentUser) return;
-  const { error } = await supabase.from("active_tournaments").upsert({
-    owner_id: state.currentUser.id,
-    name: state.draft.name || "Kladde",
-    data: clone(state.draft)
-  });
-  if (error) alert(`Kunne ikke gemme nuværende turnering: ${error.message}`);
+  saveToStorage(STORAGE_KEYS.draft, state.draft);
 }
 
 async function clearActiveTournament() {
-  if (!state.currentUser) return;
-  const { error } = await supabase.from("active_tournaments").delete().eq("owner_id", state.currentUser.id);
-  if (error) alert(`Kunne ikke rydde aktiv turnering: ${error.message}`);
+  state.draft = { players: [], mode: "single", ballsPerRound: 24, name: "", matches: [] };
+  updateDraftInputs();
+  saveToStorage(STORAGE_KEYS.draft, state.draft);
 }
 
 function createSinglesMexicano(players) {
@@ -218,7 +193,7 @@ function renderSavedPlayers() {
 
   state.savedPlayers.forEach((player) => {
     const li = document.createElement("li");
-    li.innerHTML = `<div><strong>${player.name}</strong>${player.linked_email ? `<br><small>Tilknyttet: ${player.linked_email}</small>` : ""}</div>`;
+    li.innerHTML = `<div><strong>${player.name}</strong></div>`;
 
     const actions = document.createElement("div");
     actions.className = "actions";
@@ -227,14 +202,8 @@ function renderSavedPlayers() {
     useBtn.type = "button";
     useBtn.textContent = "Brug i turnering";
     useBtn.addEventListener("click", async () => {
-      if (state.draft.players.includes(player.name)) {
-        alert("Spilleren er allerede med i turneringen.");
-        return;
-      }
-      if (state.draft.players.length >= 4) {
-        alert("Der kan kun være 4 spillere i denne version.");
-        return;
-      }
+      if (state.draft.players.includes(player.name)) return alert("Spilleren er allerede med i turneringen.");
+      if (state.draft.players.length >= 4) return alert("Der kan kun være 4 spillere i denne version.");
       state.draft.players.push(player.name);
       setActiveView("current");
       renderPlayers();
@@ -245,12 +214,9 @@ function renderSavedPlayers() {
     deleteBtn.type = "button";
     deleteBtn.textContent = "Slet";
     deleteBtn.addEventListener("click", async () => {
-      const { error } = await supabase.from("players").delete().eq("id", player.id);
-      if (error) {
-        alert(`Kunne ikke slette spiller: ${error.message}`);
-        return;
-      }
-      await loadSavedPlayers();
+      state.savedPlayers = state.savedPlayers.filter((saved) => saved.id !== player.id);
+      saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
+      renderSavedPlayers();
     });
 
     actions.append(useBtn, deleteBtn);
@@ -259,54 +225,6 @@ function renderSavedPlayers() {
   });
 
   renderSavedPlayerSelector();
-}
-
-function renderAdminPlayers() {
-  adminPlayerList.innerHTML = "";
-  setVisible(adminPlayerEmpty, state.savedPlayers.length === 0);
-
-  state.savedPlayers.forEach((player) => {
-    const li = document.createElement("li");
-    const left = document.createElement("div");
-    left.innerHTML = `<strong>${player.name}</strong><br><small>Ejer: ${player.owner_email || "Ukendt"}</small>`;
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
-
-    const emailInput = document.createElement("input");
-    emailInput.type = "email";
-    emailInput.placeholder = "ven@email.dk";
-    emailInput.value = player.linked_email || "";
-
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.textContent = "Gem email";
-    saveBtn.addEventListener("click", async () => {
-      const emailValue = emailInput.value.trim().toLowerCase() || null;
-      const { error } = await supabase.from("players").update({ linked_email: emailValue }).eq("id", player.id);
-      if (error) {
-        alert(`Kunne ikke opdatere e-mail: ${error.message}`);
-        return;
-      }
-      await loadSavedPlayers();
-    });
-
-    const unlinkBtn = document.createElement("button");
-    unlinkBtn.type = "button";
-    unlinkBtn.textContent = "Afbryd tilknytning";
-    unlinkBtn.addEventListener("click", async () => {
-      const { error } = await supabase.from("players").update({ linked_email: null }).eq("id", player.id);
-      if (error) {
-        alert(`Kunne ikke fjerne tilknytning: ${error.message}`);
-        return;
-      }
-      await loadSavedPlayers();
-    });
-
-    actions.append(emailInput, saveBtn, unlinkBtn);
-    li.append(left, actions);
-    adminPlayerList.appendChild(li);
-  });
 }
 
 function renderSchedule() {
@@ -371,100 +289,6 @@ function renderStandings() {
     )
     .join("")}</tbody>`;
   standingsRoot.appendChild(table);
-}
-
-async function loadProfile() {
-  if (!state.currentUser) return;
-  const { data, error } = await supabase.from("profiles").select("id, email, role").eq("id", state.currentUser.id).maybeSingle();
-  if (error) {
-    if (error.code === "42P01") {
-      alert("Database-setup mangler (public.profiles findes ikke). Kør SQL migrationer i Supabase først.");
-      return;
-    }
-    return alert(`Kunne ikke hente profil: ${error.message}`);
-  }
-
-  if (data) {
-    state.currentProfile = data;
-    if (isBootstrapAdminEmail(state.currentUser.email) && data.role !== "admin") {
-      const { error: promoteError } = await supabase.from("profiles").update({ role: "admin" }).eq("id", state.currentUser.id);
-      if (promoteError) return alert(`Kunne ikke sætte admin-rolle: ${promoteError.message}`);
-      state.currentProfile = { ...data, role: "admin" };
-    }
-    return;
-  }
-
-  const { error: createError } = await supabase
-    .from("profiles")
-    .insert({ id: state.currentUser.id, email: (state.currentUser.email || "").toLowerCase() });
-  if (createError) return alert(`Kunne ikke oprette profil automatisk: ${createError.message}`);
-
-  const { data: createdProfile, error: createdError } = await supabase
-    .from("profiles")
-    .select("id, email, role")
-    .eq("id", state.currentUser.id)
-    .single();
-  if (createdError) return alert(`Profil oprettet, men kunne ikke hentes: ${createdError.message}`);
-
-  if (isBootstrapAdminEmail(state.currentUser.email) && createdProfile.role !== "admin") {
-    const { error: promoteError } = await supabase.from("profiles").update({ role: "admin" }).eq("id", state.currentUser.id);
-    if (promoteError) return alert(`Kunne ikke sætte admin-rolle: ${promoteError.message}`);
-    state.currentProfile = { ...createdProfile, role: "admin" };
-    return;
-  }
-
-  state.currentProfile = createdProfile;
-}
-
-function renderInvitations() {
-  inviteList.innerHTML = "";
-  state.invitations.forEach((invite) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<span><strong>${invite.email}</strong> (${invite.role})</span><small>${new Date(invite.created_at).toLocaleString("da-DK")}</small>`;
-    inviteList.appendChild(li);
-  });
-}
-
-async function loadInvitations() {
-  if (!state.currentUser || getRole() !== "admin") {
-    state.invitations = [];
-    return renderInvitations();
-  }
-  const { data, error } = await supabase.from("invitations").select("email, role, created_at").order("created_at", { ascending: false });
-  if (error) return alert(`Kunne ikke hente invitationer: ${error.message}`);
-  state.invitations = data || [];
-  renderInvitations();
-}
-
-async function loadSavedPlayers() {
-  if (!state.currentUser) {
-    state.savedPlayers = [];
-    renderSavedPlayers();
-    renderAdminPlayers();
-    return;
-  }
-
-  let query = supabase.from("players").select("id, name, linked_email, owner_id, profiles:owner_id(email)").order("name", { ascending: true });
-  if (getRole() !== "admin") query = query.eq("owner_id", state.currentUser.id);
-
-  const { data, error } = await query;
-  if (error) return alert(`Kunne ikke hente spillere: ${error.message}`);
-
-  state.savedPlayers = (data || []).map((player) => ({
-    ...player,
-    owner_email: player.profiles?.email || null
-  }));
-
-  renderSavedPlayers();
-  renderAdminPlayers();
-}
-
-async function loadActiveTournament() {
-  if (!state.currentUser) return;
-  const { data, error } = await supabase.from("active_tournaments").select("data").eq("owner_id", state.currentUser.id).maybeSingle();
-  if (error) return alert(`Kunne ikke hente aktiv turnering: ${error.message}`);
-  if (data?.data) state.draft = clone(data.data);
-  updateDraftInputs();
 }
 
 function getAggregateStats() {
@@ -541,105 +365,6 @@ function renderHistory() {
   renderAggregateStats();
 }
 
-async function loadHistory() {
-  if (!state.currentUser) return;
-  let query = supabase.from("tournaments").select("id, owner_id, name, data, updated_at").order("updated_at", { ascending: false });
-  if (getRole() !== "admin") query = query.eq("owner_id", state.currentUser.id);
-  const { data, error } = await query;
-  if (error) return alert(`Kunne ikke hente historik: ${error.message}`);
-  state.tournaments = data || [];
-  renderHistory();
-}
-
-async function renderShell() {
-  const loggedIn = Boolean(state.currentUser);
-  setVisible(authCard, !loggedIn);
-  if (loggedIn) clearAuthFeedback();
-  setVisible(appCard, loggedIn);
-  setVisible(sessionBox, loggedIn);
-  if (!loggedIn) return;
-
-  sessionLabel.textContent = `${state.currentProfile?.email || state.currentUser.email} (${getRole()})`;
-  setVisible(adminCard, getRole() === "admin");
-  setVisible(adminPlayerCard, getRole() === "admin");
-
-  await loadInvitations();
-  await loadSavedPlayers();
-  await loadActiveTournament();
-  await loadHistory();
-
-  renderPlayers();
-  renderSchedule();
-  renderStandings();
-}
-
-async function isInvitedEmail(email) {
-  const { data, error } = await supabase.rpc("is_email_invited", { input_email: email });
-  if (error) {
-    alert(`Kunne ikke validere invitation: ${error.message}`);
-    return false;
-  }
-  return Boolean(data);
-}
-
-async function applyInvitationRole() {
-  const { error } = await supabase.rpc("apply_invitation_role");
-  if (error) alert(`Kunne ikke sætte rolle: ${error.message}`);
-}
-
-function explainAuthError(error, fallbackPrefix) {
-  if (!error) return fallbackPrefix;
-  const code = error.code || "";
-  const message = (error.message || "").toLowerCase();
-
-  if (code === "invalid_credentials" || message.includes("invalid login credentials")) {
-    return `${fallbackPrefix}: E-mail eller adgangskode er forkert.`;
-  }
-
-  if (message.includes("email not confirmed")) {
-    return `${fallbackPrefix}: Din e-mail er ikke bekræftet endnu. Tjek din indbakke og klik på bekræftelseslinket.`;
-  }
-
-  if (message.includes("too many requests") || code === "over_request_rate_limit") {
-    return `${fallbackPrefix}: For mange forsøg. Vent et øjeblik og prøv igen.`;
-  }
-
-  if (message.includes("network") || message.includes("fetch")) {
-    return `${fallbackPrefix}: Netværksfejl. Tjek forbindelse og prøv igen.`;
-  }
-
-  if (!error.message) return `${fallbackPrefix}: Login mislykkedes uden teknisk fejlbesked. Kontrollér e-mail/adgangskode og prøv igen.`;
-
-  return `${fallbackPrefix}: ${error.message}`;
-}
-
-function isBootstrapAdminEmail(email) {
-  return (email || "").trim().toLowerCase() === ADMIN_BOOTSTRAP_EMAIL;
-}
-
-function isInvalidCredentialsError(error) {
-  const code = error?.code || "";
-  const message = (error?.message || "").toLowerCase();
-  return code === "invalid_credentials" || message.includes("invalid login credentials");
-}
-
-async function inviteByEmail(email, role) {
-  const {
-    data: { session }
-  } = await supabase.auth.getSession();
-
-  const response = await fetch(`${window.SUPABASE_URL}/functions/v1/invite-user`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: window.SUPABASE_ANON_KEY, Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ email, role })
-  });
-
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) return alert(result.error || "Kunne ikke sende invitation.");
-  await loadInvitations();
-  alert("Invitation sendt.");
-}
-
 function validateMexicanoSetup() {
   if (state.draft.players.length !== 4) return alert("Mexicano-flowet kræver præcis 4 spillere."), false;
   if (!Number.isInteger(state.draft.ballsPerRound) || state.draft.ballsPerRound < 8) return alert("Bolde pr. runde skal være mindst 8."), false;
@@ -670,34 +395,33 @@ async function completeTournament() {
     matches: clone(state.draft.matches)
   };
 
-  const { error } = await supabase.from("tournaments").insert({ owner_id: state.currentUser.id, name: state.draft.name, data: payload });
-  if (error) return alert(`Kunne ikke gemme turnering: ${error.message}`);
+  state.tournaments.unshift({ id: crypto.randomUUID(), name: state.draft.name, data: payload, updated_at: new Date().toISOString() });
+  saveToStorage(STORAGE_KEYS.tournaments, state.tournaments);
 
-  state.draft = { players: [], mode: "single", ballsPerRound: 24, name: "", matches: [] };
-  updateDraftInputs();
+  await clearActiveTournament();
   renderPlayers();
   renderSchedule();
   renderStandings();
-  await clearActiveTournament();
-  await loadHistory();
+  renderHistory();
   alert("Turnering gemt i historik.");
 }
 
 homeViewBtn.addEventListener("click", () => setActiveView("home"));
 currentViewBtn.addEventListener("click", () => setActiveView("current"));
 
-savedPlayerForm.addEventListener("submit", async (event) => {
+savedPlayerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = savedPlayerInput.value.trim();
   if (!name) return;
-  const { error } = await supabase.from("players").insert({ owner_id: state.currentUser.id, name });
-  if (error) {
-    if (error.code === "23505") alert("Spilleren findes allerede i din liste.");
-    else alert(`Kunne ikke gemme spiller: ${error.message}`);
+  if (state.savedPlayers.some((player) => player.name.toLowerCase() === name.toLowerCase())) {
+    alert("Spilleren findes allerede i din liste.");
     return;
   }
+  state.savedPlayers.push({ id: crypto.randomUUID(), name });
+  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
   savedPlayerForm.reset();
-  await loadSavedPlayers();
+  renderSavedPlayers();
 });
 
 playerForm.addEventListener("submit", async (event) => {
@@ -711,8 +435,10 @@ playerForm.addEventListener("submit", async (event) => {
 
   state.draft.players.push(name);
   if (typedName && !state.savedPlayers.some((player) => player.name.toLowerCase() === typedName.toLowerCase())) {
-    await supabase.from("players").insert({ owner_id: state.currentUser.id, name: typedName });
-    await loadSavedPlayers();
+    state.savedPlayers.push({ id: crypto.randomUUID(), name: typedName });
+    state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+    saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
+    renderSavedPlayers();
   }
 
   playerInput.value = "";
@@ -721,115 +447,24 @@ playerForm.addEventListener("submit", async (event) => {
   await saveActiveTournament();
 });
 
-loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  clearAuthFeedback();
-  const email = document.getElementById("login-email").value.trim().toLowerCase();
-  const password = document.getElementById("login-password").value;
-
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error && data?.session) return;
-
-    if (isBootstrapAdminEmail(email) && isInvalidCredentialsError(error)) {
-      const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
-      if (signupError) {
-        const message = explainAuthError(signupError, "Kunne ikke oprette bootstrap-admin");
-        setAuthFeedback(message);
-        return alert(message);
-      }
-      if (signupData.session) {
-        const message = "Bootstrap-admin oprettet og logget ind.";
-        setAuthFeedback(message, "success");
-        return alert(message);
-      }
-      const message = "Bootstrap-admin oprettet. Tjek din e-mail for bekræftelse før login.";
-      setAuthFeedback(message, "info");
-      return alert(message);
-    }
-
-    const fallbackError = error || { message: "Login lykkedes ikke, men tjenesten returnerede ingen fejl." };
-    const message = explainAuthError(fallbackError, "Kunne ikke logge ind");
-    setAuthFeedback(message);
-    return alert(message);
-  } catch (error) {
-    const message = explainAuthError(error, "Kunne ikke logge ind");
-    setAuthFeedback(message);
-    alert(message);
-  }
-});
-
-registerForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  clearAuthFeedback();
-  const email = document.getElementById("register-email").value.trim().toLowerCase();
-  const password = document.getElementById("register-password").value;
-  if (!isBootstrapAdminEmail(email) && !(await isInvitedEmail(email))) {
-    const message = "Du skal have en invitation fra en admin for at oprette konto.";
-    setAuthFeedback(message);
-    return alert(message);
-  }
-
-  try {
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      const message = explainAuthError(error, "Kunne ikke oprette konto");
-      setAuthFeedback(message);
-      return alert(message);
-    }
-  } catch (error) {
-    const message = explainAuthError(error, "Kunne ikke oprette konto");
-    setAuthFeedback(message);
-    return alert(message);
-  }
-
-  const message = "Konto oprettet. Tjek din e-mail for bekræftelse.";
-  setAuthFeedback(message, "success");
-  alert(message);
-});
-
-logoutBtn.addEventListener("click", async () => {
-  await supabase.auth.signOut();
-});
-
-inviteForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const email = document.getElementById("invite-email").value.trim().toLowerCase();
-  const role = document.getElementById("invite-role").value;
-  await inviteByEmail(email, role);
-  inviteForm.reset();
-});
-
-document.getElementById("login-email").addEventListener("input", clearAuthFeedback);
-document.getElementById("login-password").addEventListener("input", clearAuthFeedback);
-document.getElementById("register-email").addEventListener("input", clearAuthFeedback);
-document.getElementById("register-password").addEventListener("input", clearAuthFeedback);
-
 generateBtn.addEventListener("click", generateMexicanoTournament);
 completeBtn.addEventListener("click", completeTournament);
 statsSortInput.addEventListener("change", renderAggregateStats);
 
-supabase.auth.onAuthStateChange(async (_, session) => {
-  state.currentUser = session?.user || null;
-  if (state.currentUser) {
-    await applyInvitationRole();
-    await loadProfile();
-    setActiveView("home");
-  } else {
-    state.currentProfile = null;
-  }
-  await renderShell();
-});
+(function init() {
+  state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
+  state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []);
+  state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
 
-(async () => {
-  const {
-    data: { session }
-  } = await supabase.auth.getSession();
-  state.currentUser = session?.user || null;
-  if (state.currentUser) {
-    await applyInvitationRole();
-    await loadProfile();
-  }
+  setVisible(adminCard, false);
+  setVisible(adminPlayerCard, false);
+  setVisible(appCard, true);
+
   setActiveView("home");
-  await renderShell();
+  updateDraftInputs();
+  renderSavedPlayers();
+  renderPlayers();
+  renderSchedule();
+  renderStandings();
+  renderHistory();
 })();
