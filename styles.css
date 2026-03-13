@@ -23,6 +23,11 @@ button.primary { background: var(--accent); color: #fff; border-color: transpare
 button:hover { filter: brightness(0.98); }
 .session-box { text-align: right; display: grid; gap: 0.35rem; }
 
+.auth-feedback { margin: 0.35rem 0 0.75rem; padding: 0.6rem 0.75rem; border-radius: 10px; border: 1px solid transparent; }
+.auth-feedback.is-error { background: #fff1f1; border-color: #ffc9c9; color: #8b1e1e; }
+.auth-feedback.is-success { background: #ecfdf3; border-color: #b7efce; color: #116329; }
+.auth-feedback.is-info { background: #eef4ff; border-color: #c9dcff; color: #1f4b99; }
+
 .player-list { list-style: none; margin: 0.75rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .player-list li { background: #e9f6ef; border: 1px solid #cbe8d7; border-radius: 999px; padding: 0.3rem 0.65rem; display: inline-flex; gap: 0.45rem; }
 .player-list button { border: none; background: transparent; color: #8b1e1e; padding: 0; }

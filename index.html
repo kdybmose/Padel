@@ -25,7 +25,13 @@
         <ul class="simple-list changelog-list">
           <li>
             <div>
-              <strong>13.03.2026</strong><br />
+              <strong>13.03.2026 · v1.0.1</strong><br />
+              Forbedret login-feedback: fejl vises nu direkte under login-formen, også i tilfælde hvor Supabase ikke returnerer en tydelig fejl.
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>13.03.2026 · v1.0.0</strong><br />
               Tilføjet versionshistorik på forsiden og gjort den synlig uden login.
             </div>
           </li>
@@ -35,6 +41,7 @@
       <section id="auth-card" class="card">
         <h2>Log ind</h2>
         <p class="muted">Admin bootstrap: <strong>dybmose@hotmail.com</strong> kan oprette konto uden invitation.</p>
+        <p id="auth-feedback" class="auth-feedback hidden" role="status" aria-live="polite"></p>
         <form id="login-form" class="grid-form">
           <label>E-mail <input id="login-email" type="email" required /></label>
           <label>Adgangskode <input id="login-password" type="password" required /></label>
