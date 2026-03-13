@@ -193,3 +193,25 @@ summary {
     align-items: start;
   }
 }
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.6rem;
+}
+
+.stats-table th,
+.stats-table td {
+  border: 1px solid var(--border);
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.stats-table th {
+  background: #f0f5ff;
+}
+
+.match label input {
+  margin-top: 0.25rem;
+  max-width: 140px;
+}
