@@ -156,24 +156,72 @@ function scheduleMatches(rawMatches, courts, startingRound = 1) {
   const pending = rawMatches.map((match) => ({ ...match }));
   const scheduled = [];
   let round = startingRound;
+  const playedCount = new Map();
+  const lastRoundPlayed = new Map();
+
+  pending.forEach((match) => {
+    [...match.teamA, ...match.teamB].forEach((name) => {
+      if (!playedCount.has(name)) {
+        playedCount.set(name, 0);
+        lastRoundPlayed.set(name, startingRound - 2);
+      }
+    });
+  });
+
+  function getMatchPriority(match) {
+    const players = [...match.teamA, ...match.teamB];
+    const rests = players.map((name) => round - (lastRoundPlayed.get(name) ?? startingRound - 2) - 1);
+    const minRest = Math.min(...rests);
+    const totalRest = rests.reduce((sum, value) => sum + value, 0);
+    const totalPlayed = players.reduce((sum, name) => sum + (playedCount.get(name) ?? 0), 0);
+
+    return { minRest, totalRest, totalPlayed };
+  }
+
+  function compareByPriority(matchA, matchB) {
+    const a = getMatchPriority(matchA);
+    const b = getMatchPriority(matchB);
+
+    if (b.minRest !== a.minRest) return b.minRest - a.minRest;
+    if (b.totalRest !== a.totalRest) return b.totalRest - a.totalRest;
+    if (a.totalPlayed !== b.totalPlayed) return a.totalPlayed - b.totalPlayed;
+    const namesA = [...matchA.teamA, ...matchA.teamB].join("|");
+    const namesB = [...matchB.teamA, ...matchB.teamB].join("|");
+    return namesA.localeCompare(namesB, "da");
+  }
 
   while (pending.length) {
     const usedPlayers = new Set();
     const picked = [];
 
-    for (let i = 0; i < pending.length && picked.length < courts; i += 1) {
-      const match = pending[i];
+    const candidateIndexes = pending
+      .map((_, index) => index)
+      .sort((a, b) => compareByPriority(pending[a], pending[b]));
+
+    for (let i = 0; i < candidateIndexes.length && picked.length < courts; i += 1) {
+      const matchIndex = candidateIndexes[i];
+      const match = pending[matchIndex];
       const allPlayers = [...match.teamA, ...match.teamB];
       if (allPlayers.some((name) => usedPlayers.has(name))) continue;
 
-      picked.push(i);
+      picked.push(matchIndex);
       allPlayers.forEach((name) => usedPlayers.add(name));
       scheduled.push({ ...match, round, scoreA: null, scoreB: null });
+
+      allPlayers.forEach((name) => {
+        playedCount.set(name, (playedCount.get(name) ?? 0) + 1);
+        lastRoundPlayed.set(name, round);
+      });
     }
 
     if (!picked.length) {
-      const forced = pending.shift();
+      const forcedIndex = candidateIndexes[0];
+      const [forced] = pending.splice(forcedIndex, 1);
       scheduled.push({ ...forced, round, scoreA: null, scoreB: null });
+      [...forced.teamA, ...forced.teamB].forEach((name) => {
+        playedCount.set(name, (playedCount.get(name) ?? 0) + 1);
+        lastRoundPlayed.set(name, round);
+      });
     } else {
       for (let i = picked.length - 1; i >= 0; i -= 1) pending.splice(picked[i], 1);
     }
