@@ -25,6 +25,12 @@
         <ul class="simple-list changelog-list">
           <li>
             <div>
+              <strong>13.03.2026 · v1.0.2</strong><br />
+              Formularer bruger nu <code>POST</code> som fallback, så siden ikke ender på en tom <code>?</code>-URL ved submit uden aktiv JavaScript.
+            </div>
+          </li>
+          <li>
+            <div>
               <strong>13.03.2026 · v1.0.1</strong><br />
               Forbedret login-feedback: fejl vises nu direkte under login-formen, også i tilfælde hvor Supabase ikke returnerer en tydelig fejl.
             </div>
@@ -42,7 +48,7 @@
         <h2>Log ind</h2>
         <p class="muted">Admin bootstrap: <strong>dybmose@hotmail.com</strong> kan oprette konto uden invitation.</p>
         <p id="auth-feedback" class="auth-feedback hidden" role="status" aria-live="polite"></p>
-        <form id="login-form" class="grid-form">
+        <form id="login-form" class="grid-form" method="post">
           <label>E-mail <input id="login-email" type="email" required /></label>
           <label>Adgangskode <input id="login-password" type="password" required /></label>
           <button type="submit" class="primary">Log ind</button>
@@ -50,7 +56,7 @@
 
         <details class="register-box">
           <summary>Ingen konto? Opret bruger via invitation</summary>
-          <form id="register-form" class="grid-form">
+          <form id="register-form" class="grid-form" method="post">
             <label>E-mail <input id="register-email" type="email" required /></label>
             <label>Adgangskode <input id="register-password" type="password" minlength="10" required /></label>
             <button type="submit">Opret konto</button>
@@ -62,7 +68,7 @@
       <section id="app-card" class="hidden">
         <section id="admin-card" class="card hidden">
           <h2>Admin: inviter spillere</h2>
-          <form id="invite-form" class="row">
+          <form id="invite-form" class="row" method="post">
             <input id="invite-email" type="email" placeholder="ven@email.dk" required />
             <select id="invite-role">
               <option value="user">Bruger</option>
@@ -91,7 +97,7 @@
         <section id="home-view">
           <section class="card">
             <h2>Mine spillere</h2>
-            <form id="saved-player-form" class="row">
+            <form id="saved-player-form" class="row" method="post">
               <input id="saved-player-input" type="text" placeholder="Nyt spillernavn" maxlength="30" required />
               <button type="submit">Gem spiller</button>
             </form>
@@ -124,7 +130,7 @@
         <section id="current-view" class="hidden">
           <section class="card">
             <h2>Nuværende turnering</h2>
-            <form id="player-form" class="row">
+            <form id="player-form" class="row" method="post">
               <select id="saved-player-select">
                 <option value="">Vælg gemt spiller</option>
               </select>
