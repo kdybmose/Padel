@@ -358,9 +358,32 @@ function renderStandings() {
 
 async function loadProfile() {
   if (!state.currentUser) return;
-  const { data, error } = await supabase.from("profiles").select("id, email, role").eq("id", state.currentUser.id).single();
-  if (error) return alert(`Kunne ikke hente profil: ${error.message}`);
-  state.currentProfile = data;
+  const { data, error } = await supabase.from("profiles").select("id, email, role").eq("id", state.currentUser.id).maybeSingle();
+  if (error) {
+    if (error.code === "42P01") {
+      alert("Database-setup mangler (public.profiles findes ikke). Kør SQL migrationer i Supabase først.");
+      return;
+    }
+    return alert(`Kunne ikke hente profil: ${error.message}`);
+  }
+
+  if (data) {
+    state.currentProfile = data;
+    return;
+  }
+
+  const { error: createError } = await supabase
+    .from("profiles")
+    .insert({ id: state.currentUser.id, email: (state.currentUser.email || "").toLowerCase() });
+  if (createError) return alert(`Kunne ikke oprette profil automatisk: ${createError.message}`);
+
+  const { data: createdProfile, error: createdError } = await supabase
+    .from("profiles")
+    .select("id, email, role")
+    .eq("id", state.currentUser.id)
+    .single();
+  if (createdError) return alert(`Profil oprettet, men kunne ikke hentes: ${createdError.message}`);
+  state.currentProfile = createdProfile;
 }
 
 function renderInvitations() {
