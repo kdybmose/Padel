@@ -358,9 +358,32 @@ function renderStandings() {
 
 async function loadProfile() {
   if (!state.currentUser) return;
-  const { data, error } = await supabase.from("profiles").select("id, email, role").eq("id", state.currentUser.id).single();
-  if (error) return alert(`Kunne ikke hente profil: ${error.message}`);
-  state.currentProfile = data;
+  const { data, error } = await supabase.from("profiles").select("id, email, role").eq("id", state.currentUser.id).maybeSingle();
+  if (error) {
+    if (error.code === "42P01") {
+      alert("Database-setup mangler (public.profiles findes ikke). Kør SQL migrationer i Supabase først.");
+      return;
+    }
+    return alert(`Kunne ikke hente profil: ${error.message}`);
+  }
+
+  if (data) {
+    state.currentProfile = data;
+    return;
+  }
+
+  const { error: createError } = await supabase
+    .from("profiles")
+    .insert({ id: state.currentUser.id, email: (state.currentUser.email || "").toLowerCase() });
+  if (createError) return alert(`Kunne ikke oprette profil automatisk: ${createError.message}`);
+
+  const { data: createdProfile, error: createdError } = await supabase
+    .from("profiles")
+    .select("id, email, role")
+    .eq("id", state.currentUser.id)
+    .single();
+  if (createdError) return alert(`Profil oprettet, men kunne ikke hentes: ${createdError.message}`);
+  state.currentProfile = createdProfile;
 }
 
 function renderInvitations() {
@@ -533,6 +556,30 @@ async function applyInvitationRole() {
   if (error) alert(`Kunne ikke sætte rolle: ${error.message}`);
 }
 
+function explainAuthError(error, fallbackPrefix) {
+  if (!error) return fallbackPrefix;
+  const code = error.code || "";
+  const message = (error.message || "").toLowerCase();
+
+  if (code === "invalid_credentials" || message.includes("invalid login credentials")) {
+    return `${fallbackPrefix}: E-mail eller adgangskode er forkert.`;
+  }
+
+  if (message.includes("email not confirmed")) {
+    return `${fallbackPrefix}: Din e-mail er ikke bekræftet endnu. Tjek din indbakke og klik på bekræftelseslinket.`;
+  }
+
+  if (message.includes("too many requests") || code === "over_request_rate_limit") {
+    return `${fallbackPrefix}: For mange forsøg. Vent et øjeblik og prøv igen.`;
+  }
+
+  if (message.includes("network") || message.includes("fetch")) {
+    return `${fallbackPrefix}: Netværksfejl. Tjek forbindelse og prøv igen.`;
+  }
+
+  return `${fallbackPrefix}: ${error.message || "Ukendt fejl"}`;
+}
+
 async function inviteByEmail(email, role) {
   const {
     data: { session }
@@ -635,8 +682,13 @@ loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.getElementById("login-email").value.trim().toLowerCase();
   const password = document.getElementById("login-password").value;
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) alert(`Forkert login: ${error.message}`);
+
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return alert(explainAuthError(error, "Kunne ikke logge ind"));
+  } catch (error) {
+    alert(explainAuthError(error, "Kunne ikke logge ind"));
+  }
 });
 
 registerForm.addEventListener("submit", async (event) => {
@@ -644,8 +696,14 @@ registerForm.addEventListener("submit", async (event) => {
   const email = document.getElementById("register-email").value.trim().toLowerCase();
   const password = document.getElementById("register-password").value;
   if (!(await isInvitedEmail(email))) return alert("Du skal have en invitation fra en admin for at oprette konto.");
-  const { error } = await supabase.auth.signUp({ email, password });
-  if (error) return alert(`Kunne ikke oprette konto: ${error.message}`);
+
+  try {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) return alert(explainAuthError(error, "Kunne ikke oprette konto"));
+  } catch (error) {
+    return alert(explainAuthError(error, "Kunne ikke oprette konto"));
+  }
+
   alert("Konto oprettet. Tjek din e-mail for bekræftelse.");
 });
 

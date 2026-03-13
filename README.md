@@ -28,9 +28,13 @@ window.SUPABASE_ANON_KEY = "YOUR_PUBLISHABLE_KEY";
 
 ## 2) Kør SQL migration i Supabase
 
-Kør SQL fra:
+Kør SQL fra (i rækkefølge):
 
 - `supabase/migrations/20260313_init.sql`
+- `supabase/migrations/20260313_players_and_active_tournaments.sql`
+- `supabase/migrations/20260313_backfill_profiles.sql`
+
+`20260313_backfill_profiles.sql` er vigtig, hvis der allerede var brugere i `auth.users` før migrationerne blev kørt. Den opretter manglende rækker i `public.profiles`.
 
 ## 3) Deploy edge function til invitationer
 
