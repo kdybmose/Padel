@@ -128,6 +128,10 @@
                 </select>
               </label>
               <label>
+                Antal baner i brug
+                <input id="courts-count" type="number" min="1" max="10" value="1" />
+              </label>
+              <label>
                 Bolde pr. runde
                 <input id="balls-per-round" type="number" min="8" max="100" value="24" />
               </label>
@@ -141,6 +145,7 @@
               <button id="generate-btn" type="button" class="primary">Generér Mexicano runder</button>
               <button id="add-round-btn" type="button">Tilføj flere runder</button>
             </div>
+            <p id="rounds-hint" class="muted"></p>
           </section>
 
           <section class="card">
