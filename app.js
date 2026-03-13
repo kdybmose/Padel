@@ -599,6 +599,12 @@ function isBootstrapAdminEmail(email) {
   return (email || "").trim().toLowerCase() === ADMIN_BOOTSTRAP_EMAIL;
 }
 
+function isInvalidCredentialsError(error) {
+  const code = error?.code || "";
+  const message = (error?.message || "").toLowerCase();
+  return code === "invalid_credentials" || message.includes("invalid login credentials");
+}
+
 async function inviteByEmail(email, role) {
   const {
     data: { session }
@@ -704,7 +710,16 @@ loginForm.addEventListener("submit", async (event) => {
 
   try {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return alert(explainAuthError(error, "Kunne ikke logge ind"));
+    if (!error) return;
+
+    if (isBootstrapAdminEmail(email) && isInvalidCredentialsError(error)) {
+      const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
+      if (signupError) return alert(explainAuthError(signupError, "Kunne ikke oprette bootstrap-admin"));
+      if (signupData.session) return alert("Bootstrap-admin oprettet og logget ind.");
+      return alert("Bootstrap-admin oprettet. Tjek din e-mail for bekræftelse før login.");
+    }
+
+    return alert(explainAuthError(error, "Kunne ikke logge ind"));
   } catch (error) {
     alert(explainAuthError(error, "Kunne ikke logge ind"));
   }
