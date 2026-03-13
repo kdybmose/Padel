@@ -10,6 +10,7 @@ const logoutBtn = document.getElementById("logout-btn");
 
 const loginForm = document.getElementById("login-form");
 const registerForm = document.getElementById("register-form");
+const authFeedback = document.getElementById("auth-feedback");
 
 const inviteForm = document.getElementById("invite-form");
 const inviteList = document.getElementById("invite-list");
@@ -65,6 +66,20 @@ const state = {
     matches: []
   }
 };
+
+function setAuthFeedback(message, type = "error") {
+  if (!authFeedback) return;
+  authFeedback.textContent = message || "";
+  authFeedback.classList.remove("hidden", "is-error", "is-success", "is-info");
+  authFeedback.classList.add(`is-${type}`);
+}
+
+function clearAuthFeedback() {
+  if (!authFeedback) return;
+  authFeedback.textContent = "";
+  authFeedback.classList.add("hidden");
+  authFeedback.classList.remove("is-error", "is-success", "is-info");
+}
 
 function setVisible(node, visible) {
   node.classList.toggle("hidden", !visible);
@@ -539,6 +554,7 @@ async function loadHistory() {
 async function renderShell() {
   const loggedIn = Boolean(state.currentUser);
   setVisible(authCard, !loggedIn);
+  if (loggedIn) clearAuthFeedback();
   setVisible(appCard, loggedIn);
   setVisible(sessionBox, loggedIn);
   if (!loggedIn) return;
@@ -592,7 +608,9 @@ function explainAuthError(error, fallbackPrefix) {
     return `${fallbackPrefix}: Netværksfejl. Tjek forbindelse og prøv igen.`;
   }
 
-  return `${fallbackPrefix}: ${error.message || "Ukendt fejl"}`;
+  if (!error.message) return `${fallbackPrefix}: Login mislykkedes uden teknisk fejlbesked. Kontrollér e-mail/adgangskode og prøv igen.`;
+
+  return `${fallbackPrefix}: ${error.message}`;
 }
 
 function isBootstrapAdminEmail(email) {
@@ -705,42 +723,69 @@ playerForm.addEventListener("submit", async (event) => {
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearAuthFeedback();
   const email = document.getElementById("login-email").value.trim().toLowerCase();
   const password = document.getElementById("login-password").value;
 
   try {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) return;
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error && data?.session) return;
 
     if (isBootstrapAdminEmail(email) && isInvalidCredentialsError(error)) {
       const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
-      if (signupError) return alert(explainAuthError(signupError, "Kunne ikke oprette bootstrap-admin"));
-      if (signupData.session) return alert("Bootstrap-admin oprettet og logget ind.");
-      return alert("Bootstrap-admin oprettet. Tjek din e-mail for bekræftelse før login.");
+      if (signupError) {
+        const message = explainAuthError(signupError, "Kunne ikke oprette bootstrap-admin");
+        setAuthFeedback(message);
+        return alert(message);
+      }
+      if (signupData.session) {
+        const message = "Bootstrap-admin oprettet og logget ind.";
+        setAuthFeedback(message, "success");
+        return alert(message);
+      }
+      const message = "Bootstrap-admin oprettet. Tjek din e-mail for bekræftelse før login.";
+      setAuthFeedback(message, "info");
+      return alert(message);
     }
 
-    return alert(explainAuthError(error, "Kunne ikke logge ind"));
+    const fallbackError = error || { message: "Login lykkedes ikke, men tjenesten returnerede ingen fejl." };
+    const message = explainAuthError(fallbackError, "Kunne ikke logge ind");
+    setAuthFeedback(message);
+    return alert(message);
   } catch (error) {
-    alert(explainAuthError(error, "Kunne ikke logge ind"));
+    const message = explainAuthError(error, "Kunne ikke logge ind");
+    setAuthFeedback(message);
+    alert(message);
   }
 });
 
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearAuthFeedback();
   const email = document.getElementById("register-email").value.trim().toLowerCase();
   const password = document.getElementById("register-password").value;
   if (!isBootstrapAdminEmail(email) && !(await isInvitedEmail(email))) {
-    return alert("Du skal have en invitation fra en admin for at oprette konto.");
+    const message = "Du skal have en invitation fra en admin for at oprette konto.";
+    setAuthFeedback(message);
+    return alert(message);
   }
 
   try {
     const { error } = await supabase.auth.signUp({ email, password });
-    if (error) return alert(explainAuthError(error, "Kunne ikke oprette konto"));
+    if (error) {
+      const message = explainAuthError(error, "Kunne ikke oprette konto");
+      setAuthFeedback(message);
+      return alert(message);
+    }
   } catch (error) {
-    return alert(explainAuthError(error, "Kunne ikke oprette konto"));
+    const message = explainAuthError(error, "Kunne ikke oprette konto");
+    setAuthFeedback(message);
+    return alert(message);
   }
 
-  alert("Konto oprettet. Tjek din e-mail for bekræftelse.");
+  const message = "Konto oprettet. Tjek din e-mail for bekræftelse.";
+  setAuthFeedback(message, "success");
+  alert(message);
 });
 
 logoutBtn.addEventListener("click", async () => {
@@ -754,6 +799,11 @@ inviteForm.addEventListener("submit", async (event) => {
   await inviteByEmail(email, role);
   inviteForm.reset();
 });
+
+document.getElementById("login-email").addEventListener("input", clearAuthFeedback);
+document.getElementById("login-password").addEventListener("input", clearAuthFeedback);
+document.getElementById("register-email").addEventListener("input", clearAuthFeedback);
+document.getElementById("register-password").addEventListener("input", clearAuthFeedback);
 
 generateBtn.addEventListener("click", generateMexicanoTournament);
 completeBtn.addEventListener("click", completeTournament);
