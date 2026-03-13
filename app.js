@@ -1,5 +1,3 @@
-const STORAGE_KEY = "padel-planner-v2";
-
 const authCard = document.getElementById("auth-card");
 const appCard = document.getElementById("app-card");
 const adminCard = document.getElementById("admin-card");
@@ -17,31 +15,36 @@ const playerForm = document.getElementById("player-form");
 const playerInput = document.getElementById("player-input");
 const playerList = document.getElementById("player-list");
 
-const courtsInput = document.getElementById("courts");
-const matchDurationInput = document.getElementById("match-duration");
-const startTimeInput = document.getElementById("start-time");
+const courtTypeInput = document.getElementById("court-type");
+const ballsPerRoundInput = document.getElementById("balls-per-round");
+const tournamentNameInput = document.getElementById("tournament-name");
 const generateBtn = document.getElementById("generate-btn");
+const completeBtn = document.getElementById("complete-btn");
 
 const scheduleRoot = document.getElementById("schedule");
 const scheduleEmpty = document.getElementById("schedule-empty");
-const matchTemplate = document.getElementById("match-template");
+const standingsRoot = document.getElementById("standings");
+const standingsEmpty = document.getElementById("standings-empty");
 
 const historyList = document.getElementById("history-list");
 const historyEmpty = document.getElementById("history-empty");
+const aggregateRoot = document.getElementById("aggregate");
+const aggregateEmpty = document.getElementById("aggregate-empty");
+const statsSortInput = document.getElementById("stats-sort");
+
+const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 const state = {
-  users: [],
+  currentUser: null,
+  currentProfile: null,
   invitations: [],
   tournaments: [],
-  currentUserEmail: null,
   draft: {
     players: [],
-    settings: {
-      courts: 1,
-      duration: 25,
-      startTime: "10:00"
-    },
-    schedule: []
+    mode: "single",
+    ballsPerRound: 24,
+    name: "",
+    matches: []
   }
 };
 
@@ -49,59 +52,86 @@ function setVisible(node, visible) {
   node.classList.toggle("hidden", !visible);
 }
 
-function getCurrentUser() {
-  if (!state.currentUserEmail) return null;
-  return state.users.find((u) => u.email === state.currentUserEmail) || null;
+function getRole() {
+  return state.currentProfile?.role || "user";
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function clone(data) {
+  return JSON.parse(JSON.stringify(data));
 }
 
-function ensureAdminUser() {
-  if (!state.users.some((u) => u.email === "admin@padel.local")) {
-    state.users.push({
-      email: "admin@padel.local",
-      password: "admin123",
-      role: "admin"
+function getDisplayName(team) {
+  return team.join(" / ");
+}
+
+function createSinglesMexicano(players) {
+  const [a, b, c, d] = players;
+  return [
+    { round: 1, teamA: [a], teamB: [b] },
+    { round: 2, teamA: [c], teamB: [d] },
+    { round: 3, teamA: [a], teamB: [c] },
+    { round: 4, teamA: [b], teamB: [d] },
+    { round: 5, teamA: [a], teamB: [d] },
+    { round: 6, teamA: [b], teamB: [c] }
+  ];
+}
+
+function createDoublesMexicano(players) {
+  const [a, b, c, d] = players;
+  return [
+    { round: 1, teamA: [a, b], teamB: [c, d] },
+    { round: 2, teamA: [a, c], teamB: [b, d] },
+    { round: 3, teamA: [a, d], teamB: [b, c] }
+  ];
+}
+
+function buildDraftMatches(players, mode) {
+  const baseMatches = mode === "double" ? createDoublesMexicano(players) : createSinglesMexicano(players);
+  return baseMatches.map((match) => ({ ...match, scoreA: null, scoreB: null }));
+}
+
+function getTournamentStandings(tournament) {
+  const map = new Map();
+  tournament.players.forEach((player) => {
+    map.set(player, {
+      player,
+      totalBallsWon: 0,
+      totalBallsAgainst: 0,
+      matches: 0,
+      wins: 0
     });
-  }
+  });
+
+  tournament.matches.forEach((match) => {
+    if (match.scoreA === null || match.scoreB === null) return;
+
+    match.teamA.forEach((name) => {
+      const row = map.get(name);
+      row.totalBallsWon += match.scoreA;
+      row.totalBallsAgainst += match.scoreB;
+      row.matches += 1;
+      if (match.scoreA > match.scoreB) row.wins += 1;
+    });
+
+    match.teamB.forEach((name) => {
+      const row = map.get(name);
+      row.totalBallsWon += match.scoreB;
+      row.totalBallsAgainst += match.scoreA;
+      row.matches += 1;
+      if (match.scoreB > match.scoreA) row.wins += 1;
+    });
+  });
+
+  return [...map.values()]
+    .map((row) => ({
+      ...row,
+      avgBallsPerMatch: row.matches ? Number((row.totalBallsWon / row.matches).toFixed(2)) : 0
+    }))
+    .sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.wins - a.wins || a.player.localeCompare(b.player, "da"));
 }
 
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    ensureAdminUser();
-    saveState();
-    return;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.users)) state.users = parsed.users;
-    if (Array.isArray(parsed.invitations)) state.invitations = parsed.invitations;
-    if (Array.isArray(parsed.tournaments)) state.tournaments = parsed.tournaments;
-    if (typeof parsed.currentUserEmail === "string" || parsed.currentUserEmail === null) {
-      state.currentUserEmail = parsed.currentUserEmail;
-    }
-
-    if (parsed.draft && typeof parsed.draft === "object") {
-      state.draft.players = Array.isArray(parsed.draft.players) ? parsed.draft.players : [];
-      state.draft.settings = {
-        courts: Number(parsed.draft.settings?.courts) || 1,
-        duration: Number(parsed.draft.settings?.duration) || 25,
-        startTime: parsed.draft.settings?.startTime || "10:00"
-      };
-      state.draft.schedule = Array.isArray(parsed.draft.schedule) ? parsed.draft.schedule : [];
-    }
-
-    ensureAdminUser();
-    saveState();
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    ensureAdminUser();
-    saveState();
-  }
+function allResultsEntered() {
+  return state.draft.matches.length > 0 && state.draft.matches.every((m) => Number.isInteger(m.scoreA) && Number.isInteger(m.scoreB));
 }
 
 function renderPlayers() {
@@ -113,11 +143,12 @@ function renderPlayers() {
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.textContent = "✕";
-    removeBtn.setAttribute("aria-label", `Fjern ${name}`);
     removeBtn.addEventListener("click", () => {
       state.draft.players.splice(index, 1);
-      saveState();
+      if (state.draft.players.length < 4) state.draft.matches = [];
       renderPlayers();
+      renderSchedule();
+      renderStandings();
     });
 
     li.appendChild(removeBtn);
@@ -127,271 +158,437 @@ function renderPlayers() {
 
 function renderSchedule() {
   scheduleRoot.innerHTML = "";
-  if (!state.draft.schedule.length) {
-    setVisible(scheduleEmpty, true);
-    return;
-  }
+  setVisible(scheduleEmpty, state.draft.matches.length === 0);
 
-  setVisible(scheduleEmpty, false);
-  state.draft.schedule.forEach((match, index) => {
-    const node = matchTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector(".match-time").textContent = `Kamp ${index + 1} – ${match.time}`;
-    node.querySelector(".match-court").textContent = `Bane ${match.court}`;
-    node.querySelector(".match-teams").textContent = `${match.teamA} vs ${match.teamB}`;
-    scheduleRoot.appendChild(node);
+  state.draft.matches.forEach((match, index) => {
+    const row = document.createElement("article");
+    row.className = "match";
+
+    const title = document.createElement("div");
+    title.className = "match-time";
+    title.textContent = `Runde ${match.round}`;
+
+    const type = document.createElement("div");
+    type.className = "match-court";
+    type.textContent = state.draft.mode === "double" ? "Double" : "Single";
+
+    const teams = document.createElement("div");
+    teams.className = "match-teams";
+    teams.textContent = `${getDisplayName(match.teamA)} vs ${getDisplayName(match.teamB)}`;
+
+    const scoreWrap = document.createElement("div");
+    scoreWrap.className = "row";
+
+    const scoreLabel = document.createElement("label");
+    scoreLabel.textContent = `${getDisplayName(match.teamA)} score`;
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.max = String(state.draft.ballsPerRound);
+    input.value = Number.isInteger(match.scoreA) ? String(match.scoreA) : "";
+    input.placeholder = `0-${state.draft.ballsPerRound}`;
+    input.addEventListener("change", () => {
+      const value = Number(input.value);
+      if (!Number.isFinite(value) || value < 0 || value > state.draft.ballsPerRound) {
+        alert(`Indtast et tal mellem 0 og ${state.draft.ballsPerRound}.`);
+        input.value = Number.isInteger(match.scoreA) ? String(match.scoreA) : "";
+        return;
+      }
+
+      const scoreA = Math.round(value);
+      match.scoreA = scoreA;
+      match.scoreB = state.draft.ballsPerRound - scoreA;
+      renderSchedule();
+      renderStandings();
+    });
+
+    scoreLabel.appendChild(input);
+
+    const autoScore = document.createElement("div");
+    autoScore.className = "muted";
+    autoScore.textContent = Number.isInteger(match.scoreB)
+      ? `${getDisplayName(match.teamB)} får automatisk ${match.scoreB}`
+      : `${getDisplayName(match.teamB)} bliver auto-beregnet`;
+
+    scoreWrap.append(scoreLabel, autoScore);
+    row.append(title, type, teams, scoreWrap);
+    scheduleRoot.appendChild(row);
   });
 }
 
-function renderDraft() {
-  courtsInput.value = state.draft.settings.courts;
-  matchDurationInput.value = state.draft.settings.duration;
-  startTimeInput.value = state.draft.settings.startTime;
-  renderPlayers();
-  renderSchedule();
+function renderStandings() {
+  standingsRoot.innerHTML = "";
+  const hasTournament = state.draft.matches.length > 0;
+  setVisible(standingsEmpty, !hasTournament);
+  completeBtn.disabled = !allResultsEntered();
+
+  if (!hasTournament) return;
+
+  const standings = getTournamentStandings(state.draft);
+  const table = document.createElement("table");
+  table.className = "stats-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Spiller</th>
+        <th>Bolde vundet</th>
+        <th>Bolde imod</th>
+        <th>Kampe</th>
+        <th>Sejre</th>
+        <th>Bolde pr. kamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${standings
+        .map(
+          (row, i) => `<tr>
+            <td>${i === 0 ? "🏆 " : ""}${row.player}</td>
+            <td>${row.totalBallsWon}</td>
+            <td>${row.totalBallsAgainst}</td>
+            <td>${row.matches}</td>
+            <td>${row.wins}</td>
+            <td>${row.avgBallsPerMatch}</td>
+          </tr>`
+        )
+        .join("")}
+    </tbody>
+  `;
+
+  standingsRoot.appendChild(table);
 }
 
-function renderHistory() {
-  const user = getCurrentUser();
-  historyList.innerHTML = "";
-  if (!user) return;
-
-  const visible = state.tournaments.filter((t) => user.role === "admin" || t.owner === user.email);
-  setVisible(historyEmpty, visible.length === 0);
-
-  visible
-    .slice()
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-    .forEach((tournament) => {
-      const li = document.createElement("li");
-      const title = document.createElement("div");
-      title.innerHTML = `<strong>${tournament.name}</strong><br><small>Opdateret: ${new Date(tournament.updatedAt).toLocaleString("da-DK")}</small>`;
-
-      const actions = document.createElement("div");
-      actions.className = "actions";
-
-      const loadBtn = document.createElement("button");
-      loadBtn.type = "button";
-      loadBtn.textContent = "Indlæs";
-      loadBtn.addEventListener("click", () => {
-        state.draft = JSON.parse(JSON.stringify(tournament.data));
-        saveState();
-        renderDraft();
-      });
-
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.textContent = "Omdøb";
-      editBtn.addEventListener("click", () => {
-        const name = prompt("Nyt navn", tournament.name);
-        if (!name) return;
-        tournament.name = name.trim();
-        tournament.updatedAt = new Date().toISOString();
-        saveState();
-        renderHistory();
-      });
-
-      actions.append(loadBtn, editBtn);
-      li.append(title, actions);
-      historyList.appendChild(li);
-    });
-}
-
-function renderInvitations() {
-  const user = getCurrentUser();
-  inviteList.innerHTML = "";
-  if (!user || user.role !== "admin") return;
-
-  state.invitations
-    .slice()
-    .reverse()
-    .forEach((invite) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<span><strong>${invite.email}</strong> (${invite.role})</span><small>${new Date(invite.createdAt).toLocaleString("da-DK")}</small>`;
-      inviteList.appendChild(li);
-    });
-}
-
-function renderShell() {
-  const user = getCurrentUser();
-  const loggedIn = Boolean(user);
-
-  setVisible(authCard, !loggedIn);
-  setVisible(appCard, loggedIn);
-  setVisible(sessionBox, loggedIn);
-
-  if (!loggedIn) return;
-
-  sessionLabel.textContent = `${user.email} (${user.role})`;
-  setVisible(adminCard, user.role === "admin");
-  renderDraft();
-  renderHistory();
-  renderInvitations();
-}
-
-function login(email, password) {
-  const user = state.users.find((u) => u.email === email && u.password === password);
-  if (!user) {
-    alert("Forkert login.");
+async function loadProfile() {
+  if (!state.currentUser) {
+    state.currentProfile = null;
     return;
   }
 
-  state.currentUserEmail = user.email;
-  saveState();
-  renderShell();
+  const { data, error } = await supabase.from("profiles").select("id, email, role").eq("id", state.currentUser.id).single();
+  if (error) {
+    alert(`Kunne ikke hente profil: ${error.message}`);
+    return;
+  }
+
+  state.currentProfile = data;
 }
 
-function register(email, password) {
-  const invitation = state.invitations.find((i) => i.email === email);
-  if (!invitation) {
+function renderInvitations() {
+  inviteList.innerHTML = "";
+  state.invitations.forEach((invite) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span><strong>${invite.email}</strong> (${invite.role})</span><small>${new Date(invite.created_at).toLocaleString("da-DK")}</small>`;
+    inviteList.appendChild(li);
+  });
+}
+
+async function loadInvitations() {
+  if (!state.currentUser || getRole() !== "admin") {
+    state.invitations = [];
+    renderInvitations();
+    return;
+  }
+
+  const { data, error } = await supabase.from("invitations").select("email, role, created_at").order("created_at", { ascending: false });
+  if (error) {
+    alert(`Kunne ikke hente invitationer: ${error.message}`);
+    return;
+  }
+
+  state.invitations = data || [];
+  renderInvitations();
+}
+
+function getAggregateStats() {
+  const stats = new Map();
+
+  state.tournaments.forEach((tournament) => {
+    const standings = getTournamentStandings(tournament.data);
+    if (!standings.length) return;
+    const winner = standings[0].player;
+
+    standings.forEach((row) => {
+      if (!stats.has(row.player)) {
+        stats.set(row.player, {
+          player: row.player,
+          tournamentWins: 0,
+          totalBallsWon: 0,
+          totalMatches: 0
+        });
+      }
+
+      const aggregate = stats.get(row.player);
+      aggregate.totalBallsWon += row.totalBallsWon;
+      aggregate.totalMatches += row.matches;
+      if (row.player === winner) aggregate.tournamentWins += 1;
+    });
+  });
+
+  const rows = [...stats.values()].map((row) => ({
+    ...row,
+    avgBallsPerMatch: row.totalMatches ? Number((row.totalBallsWon / row.totalMatches).toFixed(2)) : 0
+  }));
+
+  const sortBy = statsSortInput.value;
+  if (sortBy === "totalBalls") rows.sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.tournamentWins - a.tournamentWins);
+  else if (sortBy === "avgBalls") rows.sort((a, b) => b.avgBallsPerMatch - a.avgBallsPerMatch || b.totalBallsWon - a.totalBallsWon);
+  else rows.sort((a, b) => b.tournamentWins - a.tournamentWins || b.totalBallsWon - a.totalBallsWon);
+
+  return rows;
+}
+
+function renderAggregateStats() {
+  aggregateRoot.innerHTML = "";
+  const rows = getAggregateStats();
+  setVisible(aggregateEmpty, rows.length === 0);
+  if (!rows.length) return;
+
+  const table = document.createElement("table");
+  table.className = "stats-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Spiller</th>
+        <th>Turneringssejre</th>
+        <th>Samlet bolde vundet</th>
+        <th>Kampe</th>
+        <th>Bolde vundet pr. kamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (row, i) => `<tr>
+            <td>${i === 0 ? "⭐ " : ""}${row.player}</td>
+            <td>${row.tournamentWins}</td>
+            <td>${row.totalBallsWon}</td>
+            <td>${row.totalMatches}</td>
+            <td>${row.avgBallsPerMatch}</td>
+          </tr>`
+        )
+        .join("")}
+    </tbody>
+  `;
+
+  aggregateRoot.appendChild(table);
+}
+
+function renderHistory() {
+  historyList.innerHTML = "";
+  setVisible(historyEmpty, state.tournaments.length === 0);
+
+  state.tournaments.forEach((tournament) => {
+    const standings = getTournamentStandings(tournament.data);
+    const winner = standings[0];
+
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <div>
+        <strong>${tournament.name}</strong><br>
+        <small>${new Date(tournament.updated_at).toLocaleString("da-DK")}</small><br>
+        <small>${tournament.data.mode === "double" ? "Double" : "Single"} · ${tournament.data.ballsPerRound} bolde pr. runde</small><br>
+        <small>Vinder: ${winner ? `${winner.player} (${winner.totalBallsWon} bolde)` : "-"}</small>
+      </div>
+    `;
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.textContent = "Indlæs";
+    loadBtn.addEventListener("click", () => {
+      state.draft = clone(tournament.data);
+      tournamentNameInput.value = state.draft.name;
+      courtTypeInput.value = state.draft.mode;
+      ballsPerRoundInput.value = state.draft.ballsPerRound;
+      renderPlayers();
+      renderSchedule();
+      renderStandings();
+    });
+
+    actions.appendChild(loadBtn);
+    li.appendChild(actions);
+    historyList.appendChild(li);
+  });
+
+  renderAggregateStats();
+}
+
+async function loadHistory() {
+  if (!state.currentUser) {
+    state.tournaments = [];
+    renderHistory();
+    return;
+  }
+
+  let query = supabase.from("tournaments").select("id, owner_id, name, data, updated_at").order("updated_at", { ascending: false });
+  if (getRole() !== "admin") query = query.eq("owner_id", state.currentUser.id);
+
+  const { data, error } = await query;
+  if (error) {
+    alert(`Kunne ikke hente historik: ${error.message}`);
+    return;
+  }
+
+  state.tournaments = data || [];
+  renderHistory();
+}
+
+async function renderShell() {
+  const loggedIn = Boolean(state.currentUser);
+  setVisible(authCard, !loggedIn);
+  setVisible(appCard, loggedIn);
+  setVisible(sessionBox, loggedIn);
+  if (!loggedIn) return;
+
+  sessionLabel.textContent = `${state.currentProfile?.email || state.currentUser.email} (${getRole()})`;
+  setVisible(adminCard, getRole() === "admin");
+
+  renderPlayers();
+  renderSchedule();
+  renderStandings();
+  await loadInvitations();
+  await loadHistory();
+}
+
+async function isInvitedEmail(email) {
+  const { data, error } = await supabase.rpc("is_email_invited", { input_email: email });
+  if (error) {
+    alert(`Kunne ikke validere invitation: ${error.message}`);
+    return false;
+  }
+  return Boolean(data);
+}
+
+async function applyInvitationRole() {
+  const { error } = await supabase.rpc("apply_invitation_role");
+  if (error) alert(`Kunne ikke sætte rolle: ${error.message}`);
+}
+
+async function inviteByEmail(email, role) {
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
+
+  const response = await fetch(`${window.SUPABASE_URL}/functions/v1/invite-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: window.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify({ email, role })
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    alert(result.error || "Kunne ikke sende invitation.");
+    return;
+  }
+
+  await loadInvitations();
+  alert("Invitation sendt.");
+}
+
+function validateMexicanoSetup() {
+  if (state.draft.players.length !== 4) {
+    alert("Mexicano-flowet her kræver præcis 4 spillere.");
+    return false;
+  }
+
+  if (!["single", "double"].includes(state.draft.mode)) {
+    alert("Vælg en gyldig bane-type.");
+    return false;
+  }
+
+  if (!Number.isInteger(state.draft.ballsPerRound) || state.draft.ballsPerRound < 8) {
+    alert("Bolde pr. runde skal være mindst 8.");
+    return false;
+  }
+
+  return true;
+}
+
+function generateMexicanoTournament() {
+  state.draft.mode = courtTypeInput.value;
+  state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
+  state.draft.name = tournamentNameInput.value.trim() || `Mexicano ${new Date().toLocaleDateString("da-DK")}`;
+
+  if (!validateMexicanoSetup()) return;
+
+  state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode);
+  renderSchedule();
+  renderStandings();
+}
+
+async function completeTournament() {
+  if (!validateMexicanoSetup()) return;
+  if (!allResultsEntered()) {
+    alert("Indtast resultater for alle runder før du afslutter.");
+    return;
+  }
+
+  const payload = {
+    players: clone(state.draft.players),
+    mode: state.draft.mode,
+    ballsPerRound: state.draft.ballsPerRound,
+    name: state.draft.name,
+    matches: clone(state.draft.matches)
+  };
+
+  const { error } = await supabase.from("tournaments").insert({
+    owner_id: state.currentUser.id,
+    name: state.draft.name,
+    data: payload
+  });
+
+  if (error) {
+    alert(`Kunne ikke gemme turnering: ${error.message}`);
+    return;
+  }
+
+  alert("Turnering gemt i historik.");
+  await loadHistory();
+}
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = document.getElementById("login-email").value.trim().toLowerCase();
+  const password = document.getElementById("login-password").value;
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) alert(`Forkert login: ${error.message}`);
+});
+
+registerForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = document.getElementById("register-email").value.trim().toLowerCase();
+  const password = document.getElementById("register-password").value;
+
+  if (!(await isInvitedEmail(email))) {
     alert("Du skal have en invitation fra en admin for at oprette konto.");
     return;
   }
 
-  if (state.users.some((u) => u.email === email)) {
-    alert("Brugeren findes allerede.");
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) {
+    alert(`Kunne ikke oprette konto: ${error.message}`);
     return;
   }
 
-  state.users.push({ email, password, role: invitation.role });
-  state.currentUserEmail = email;
-  saveState();
-  renderShell();
-}
-
-function inviteByEmail(email, role) {
-  if (state.invitations.some((i) => i.email === email)) {
-    alert("Denne e-mail er allerede inviteret.");
-    return;
-  }
-
-  const invite = { email, role, createdAt: new Date().toISOString() };
-  state.invitations.push(invite);
-  saveState();
-  renderInvitations();
-
-  const subject = encodeURIComponent("Invitation til Padel Turneringsplan");
-  const body = encodeURIComponent(
-    `Hej!\n\nDu er inviteret som ${role} i Padel Turneringsplan.\nÅbn appen og opret konto med denne e-mail.\n\nMvh`
-  );
-  window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-}
-
-function formatTime(totalMinutes) {
-  const hrs = Math.floor(totalMinutes / 60)
-    .toString()
-    .padStart(2, "0");
-  const mins = (totalMinutes % 60).toString().padStart(2, "0");
-  return `${hrs}:${mins}`;
-}
-
-function buildRoundRobin(players) {
-  const names = [...players];
-  if (names.length % 2 === 1) names.push("BYE");
-
-  const rounds = [];
-  const totalRounds = names.length - 1;
-
-  for (let i = 0; i < totalRounds; i += 1) {
-    const round = [];
-    for (let j = 0; j < names.length / 2; j += 1) {
-      const a = names[j];
-      const b = names[names.length - 1 - j];
-      if (a !== "BYE" && b !== "BYE") {
-        round.push([a, b]);
-      }
-    }
-    rounds.push(round);
-
-    const fixed = names[0];
-    const rotated = [fixed, names[names.length - 1], ...names.slice(1, names.length - 1)];
-    names.splice(0, names.length, ...rotated);
-  }
-
-  return rounds;
-}
-
-function toPadelMatches(rounds) {
-  const matches = [];
-  rounds.forEach((round) => {
-    for (let i = 0; i + 1 < round.length; i += 2) {
-      const [p1, p2] = round[i];
-      const [p3, p4] = round[i + 1];
-      matches.push({
-        teamA: `${p1} / ${p2}`,
-        teamB: `${p3} / ${p4}`
-      });
-    }
-  });
-  return matches;
-}
-
-function createTournamentSchedule() {
-  if (state.draft.players.length < 4) {
-    alert("Tilføj mindst 4 spillere.");
-    return;
-  }
-
-  const [h, m] = (startTimeInput.value || "10:00").split(":").map(Number);
-  const startMinutes = h * 60 + m;
-
-  state.draft.settings = {
-    courts: Math.max(1, Number(courtsInput.value) || 1),
-    duration: Math.max(10, Number(matchDurationInput.value) || 25),
-    startTime: startTimeInput.value || "10:00"
-  };
-
-  const matches = toPadelMatches(buildRoundRobin(state.draft.players));
-  if (!matches.length) {
-    alert("Kunne ikke generere kampe.");
-    return;
-  }
-
-  state.draft.schedule = matches.map((match, i) => ({
-    ...match,
-    court: (i % state.draft.settings.courts) + 1,
-    time: formatTime(startMinutes + Math.floor(i / state.draft.settings.courts) * state.draft.settings.duration)
-  }));
-
-  const user = getCurrentUser();
-  const timestamp = new Date().toISOString();
-  state.tournaments.push({
-    id: crypto.randomUUID(),
-    owner: user.email,
-    name: `Turnering ${new Date(timestamp).toLocaleDateString("da-DK")}`,
-    updatedAt: timestamp,
-    data: JSON.parse(JSON.stringify(state.draft))
-  });
-
-  saveState();
-  renderSchedule();
-  renderHistory();
-}
-
-loginForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const email = document.getElementById("login-email").value.trim().toLowerCase();
-  const password = document.getElementById("login-password").value;
-  login(email, password);
+  alert("Konto oprettet. Tjek din e-mail for bekræftelse.");
 });
 
-registerForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const email = document.getElementById("register-email").value.trim().toLowerCase();
-  const password = document.getElementById("register-password").value;
-  register(email, password);
+logoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
 });
 
-logoutBtn.addEventListener("click", () => {
-  state.currentUserEmail = null;
-  saveState();
-  renderShell();
-});
-
-inviteForm.addEventListener("submit", (event) => {
+inviteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.getElementById("invite-email").value.trim().toLowerCase();
   const role = document.getElementById("invite-role").value;
-  inviteByEmail(email, role);
+  await inviteByEmail(email, role);
   inviteForm.reset();
 });
 
@@ -404,13 +601,39 @@ playerForm.addEventListener("submit", (event) => {
     return;
   }
 
+  if (state.draft.players.length >= 4) {
+    alert("Denne version understøtter 4 spillere pr. Mexicano-turnering.");
+    return;
+  }
+
   state.draft.players.push(name);
   playerInput.value = "";
-  saveState();
   renderPlayers();
 });
 
-generateBtn.addEventListener("click", createTournamentSchedule);
+generateBtn.addEventListener("click", generateMexicanoTournament);
+completeBtn.addEventListener("click", completeTournament);
+statsSortInput.addEventListener("change", renderAggregateStats);
 
-loadState();
-renderShell();
+supabase.auth.onAuthStateChange(async (_, session) => {
+  state.currentUser = session?.user || null;
+  if (state.currentUser) {
+    await applyInvitationRole();
+    await loadProfile();
+  } else {
+    state.currentProfile = null;
+  }
+  await renderShell();
+});
+
+(async () => {
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
+  state.currentUser = session?.user || null;
+  if (state.currentUser) {
+    await applyInvitationRole();
+    await loadProfile();
+  }
+  await renderShell();
+})();

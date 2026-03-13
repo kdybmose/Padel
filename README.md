@@ -1,49 +1,70 @@
-# Padel Turneringsplan (GitHub Pages)
+# Padel Mexicano (GitHub Pages + Supabase)
 
-Mobilvenlig webapp til padel-turnering med:
+Mobilvenlig webapp til Mexicano-format med 4 spillere:
 
-- Login (admin/bruger)
-- Invitationer via e-mail (admin)
-- Oprettelse og redigering af turneringer
-- Historik over gemte planer
+- Supabase Auth (email/password)
+- Roller (`admin` / `user`)
+- Invitationer via SMTP (Supabase Auth invite)
+- Single-bane Mexicano (alle møder alle)
+- Double-bane Mexicano (3 runder for 4 spillere)
+- Samlet historik og spillerstatistik på tværs af turneringer
 
-## Vigtigt om sikkerhed
+## Funktionalitet i Mexicano-flowet
 
-Denne løsning er **100% statisk** (GitHub Pages), så login/roller/historik gemmes i browserens `localStorage`.
-Det er fint til private/test-formål, men **ikke sikker produktion**.
+- Vælg bane-type: `single` eller `double`.
+- Vælg antal bolde pr. runde (fx 24).
+- Ved resultatindtastning udfyldes modstanderens score automatisk (fx 14 => 10).
+- Vinder findes på flest samlede bolde vundet, når alle runder er spillet.
+- Historik viser turneringsvindere og samlet leaderboard med sortering.
 
-## Standard admin (første opstart)
+## 1) Konfigurer frontend
 
-- E-mail: `admin@padel.local`
-- Kode: `admin123`
+Fil: `supabase.config.js`
+
+```js
+window.SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+window.SUPABASE_ANON_KEY = "YOUR_PUBLISHABLE_KEY";
+```
+
+## 2) Kør SQL migration i Supabase
+
+Kør SQL fra:
+
+- `supabase/migrations/20260313_init.sql`
+
+## 3) Deploy edge function til invitationer
+
+Function-fil:
+
+- `supabase/functions/invite-user/index.ts`
+
+Deploy:
+
+```bash
+supabase functions deploy invite-user
+```
+
+## 4) Auth + SMTP setup i Supabase
+
+I Supabase Dashboard:
+
+- **Authentication → Providers**: Aktivér Email/password.
+- **Authentication → URL configuration**: Sæt Site URL til din GitHub Pages URL.
+- **Authentication → SMTP settings**: Konfigurer SMTP til invite mails.
+
+## 5) Opret første admin (ingen hardcodede credentials i appen)
+
+1. Opret bruger i Supabase Authentication.
+2. Kør SQL:
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'din-admin@email.dk';
+```
 
 ## Lokal kørsel
 
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0
 ```
-
-## Deploy på GitHub Pages
-
-1. Push koden til GitHub (fx branch `main`).
-2. Gå til repo → **Settings** → **Pages**.
-3. Under **Build and deployment**, vælg **GitHub Actions**.
-4. Workflowet i `.github/workflows/deploy-pages.yml` deployer automatisk ved push.
-5. Når workflowet er grønt, får du en URL som:
-   `https://<brugernavn>.github.io/<repo>/`
-
-## Invitationer (admin)
-
-Admin kan invitere venner på e-mail i appen:
-
-1. Log ind som admin.
-2. Indtast e-mail og vælg rolle (admin/user).
-3. Klik **Send invitation**.
-4. Appen opretter invitationen og åbner din mailklient (`mailto`) med udfyldt besked.
-
-## Begrænsninger i GitHub Pages-setup
-
-- Brugere/historik synkroniseres ikke mellem enheder automatisk (data er lokale pr. browser).
-- E-mailafsendelse sker via brugerens egen mailklient (ikke server-side udsendelse).
-
-Hvis du vil have “rigtig” login, delt historik på tværs af enheder og server-side mail, så skal vi koble appen på backend (fx Supabase/Firebase).

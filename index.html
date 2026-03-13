@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Padel Turneringsplan</title>
+    <title>Padel Mexicano</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="container">
       <header class="topbar">
         <div>
-          <h1>🎾 Padel Turneringsplan</h1>
-          <p class="muted">Login med roller, historik og invitationer.</p>
+          <h1>🎾 Padel Mexicano</h1>
+          <p class="muted">Supabase Auth, invitationer og Mexicano turneringer.</p>
         </div>
         <div id="session-box" class="session-box hidden">
           <div id="session-label"></div>
@@ -31,16 +31,16 @@
           <summary>Ingen konto? Opret bruger via invitation</summary>
           <form id="register-form" class="grid-form">
             <label>E-mail <input id="register-email" type="email" required /></label>
-            <label>Adgangskode <input id="register-password" type="password" minlength="6" required /></label>
+            <label>Adgangskode <input id="register-password" type="password" minlength="10" required /></label>
             <button type="submit">Opret konto</button>
           </form>
-          <p class="muted">Første gang appen åbnes oprettes en standard admin: <strong>admin@padel.local / admin123</strong>.</p>
+          <p class="muted">Din e-mail skal være inviteret af en admin.</p>
         </details>
       </section>
 
       <section id="app-card" class="hidden">
         <section id="admin-card" class="card hidden">
-          <h2>Admin: inviter venner</h2>
+          <h2>Admin: inviter spillere</h2>
           <form id="invite-form" class="row">
             <input id="invite-email" type="email" placeholder="ven@email.dk" required />
             <select id="invite-role">
@@ -50,38 +50,70 @@
             <button type="submit">Send invitation</button>
           </form>
           <ul id="invite-list" class="simple-list"></ul>
-          <p class="muted">Invitationen oprettes i systemet og åbner samtidig en e-mail-klient via <code>mailto:</code>.</p>
+          <p class="muted">Invitationsmail sendes via Supabase SMTP.</p>
         </section>
 
         <section class="card">
-          <h2>1) Deltagere</h2>
+          <h2>1) Turneringsopsætning</h2>
           <form id="player-form" class="row">
             <input id="player-input" type="text" placeholder="Navn på spiller" maxlength="30" required />
-            <button type="submit">Tilføj</button>
+            <button type="submit">Tilføj spiller</button>
           </form>
           <ul id="player-list" class="player-list"></ul>
-        </section>
 
-        <section class="card">
-          <h2>2) Indstillinger</h2>
           <div class="row stacked-mobile">
-            <label>Baner <input id="courts" type="number" min="1" max="8" value="1" /></label>
-            <label>Kamp-varighed (min) <input id="match-duration" type="number" min="10" max="120" value="25" /></label>
-            <label>Starttid <input id="start-time" type="time" value="10:00" /></label>
+            <label>
+              Bane-type
+              <select id="court-type">
+                <option value="single">Single bane (1v1)</option>
+                <option value="double">Double bane (2v2)</option>
+              </select>
+            </label>
+            <label>
+              Bolde pr. runde
+              <input id="balls-per-round" type="number" min="8" max="100" value="24" />
+            </label>
+            <label>
+              Turneringsnavn
+              <input id="tournament-name" type="text" maxlength="60" placeholder="Mexicano fredag" />
+            </label>
           </div>
-          <button id="generate-btn" type="button" class="primary">Gem ny turneringsplan</button>
+
+          <button id="generate-btn" type="button" class="primary">Generér Mexicano runder</button>
         </section>
 
         <section class="card">
-          <h2>3) Aktuel plan</h2>
-          <div id="schedule-empty" class="muted">Ingen plan endnu.</div>
+          <h2>2) Runde-resultater</h2>
+          <div id="schedule-empty" class="muted">Ingen turnering genereret endnu.</div>
           <div id="schedule" class="schedule"></div>
         </section>
 
         <section class="card">
-          <h2>Historik</h2>
-          <div id="history-empty" class="muted">Ingen gemte planer endnu.</div>
+          <h2>3) Stilling i nuværende turnering</h2>
+          <div id="standings-empty" class="muted">Stilling vises når turnering er genereret.</div>
+          <div id="standings"></div>
+          <button id="complete-btn" type="button" class="primary">Afslut og gem turnering</button>
+        </section>
+
+        <section class="card">
+          <h2>Historik og samlet oversigt</h2>
+          <div class="row stacked-mobile">
+            <label>
+              Sortér samlet statistik efter
+              <select id="stats-sort">
+                <option value="wins">Turneringssejre</option>
+                <option value="totalBalls">Samlet bolde vundet</option>
+                <option value="avgBalls">Bolde vundet pr. kamp</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="history-empty" class="muted">Ingen gemte turneringer endnu.</div>
           <ul id="history-list" class="simple-list"></ul>
+
+          <h3>Samlet spillerstatistik</h3>
+          <div id="aggregate-empty" class="muted">Ingen statistik endnu.</div>
+          <div id="aggregate"></div>
         </section>
       </section>
     </main>
@@ -94,6 +126,8 @@
       </article>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase.config.js"></script>
     <script src="app.js" defer></script>
   </body>
 </html>
