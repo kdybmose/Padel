@@ -46,6 +46,8 @@ const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
 
+const ADMIN_BOOTSTRAP_EMAIL = "dybmose@hotmail.com";
+
 const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 const state = {
@@ -369,6 +371,11 @@ async function loadProfile() {
 
   if (data) {
     state.currentProfile = data;
+    if (isBootstrapAdminEmail(state.currentUser.email) && data.role !== "admin") {
+      const { error: promoteError } = await supabase.from("profiles").update({ role: "admin" }).eq("id", state.currentUser.id);
+      if (promoteError) return alert(`Kunne ikke sætte admin-rolle: ${promoteError.message}`);
+      state.currentProfile = { ...data, role: "admin" };
+    }
     return;
   }
 
@@ -383,6 +390,14 @@ async function loadProfile() {
     .eq("id", state.currentUser.id)
     .single();
   if (createdError) return alert(`Profil oprettet, men kunne ikke hentes: ${createdError.message}`);
+
+  if (isBootstrapAdminEmail(state.currentUser.email) && createdProfile.role !== "admin") {
+    const { error: promoteError } = await supabase.from("profiles").update({ role: "admin" }).eq("id", state.currentUser.id);
+    if (promoteError) return alert(`Kunne ikke sætte admin-rolle: ${promoteError.message}`);
+    state.currentProfile = { ...createdProfile, role: "admin" };
+    return;
+  }
+
   state.currentProfile = createdProfile;
 }
 
@@ -580,6 +595,10 @@ function explainAuthError(error, fallbackPrefix) {
   return `${fallbackPrefix}: ${error.message || "Ukendt fejl"}`;
 }
 
+function isBootstrapAdminEmail(email) {
+  return (email || "").trim().toLowerCase() === ADMIN_BOOTSTRAP_EMAIL;
+}
+
 async function inviteByEmail(email, role) {
   const {
     data: { session }
@@ -695,7 +714,9 @@ registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const email = document.getElementById("register-email").value.trim().toLowerCase();
   const password = document.getElementById("register-password").value;
-  if (!(await isInvitedEmail(email))) return alert("Du skal have en invitation fra en admin for at oprette konto.");
+  if (!isBootstrapAdminEmail(email) && !(await isInvitedEmail(email))) {
+    return alert("Du skal have en invitation fra en admin for at oprette konto.");
+  }
 
   try {
     const { error } = await supabase.auth.signUp({ email, password });
