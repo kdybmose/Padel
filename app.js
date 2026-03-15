@@ -37,6 +37,7 @@ const historyEmpty = document.getElementById("history-empty");
 const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
+const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 
 const CHANGELOG_ENTRIES = [
@@ -609,6 +610,18 @@ function renderAggregateStats() {
   aggregateRoot.appendChild(table);
 }
 
+
+async function clearTournamentHistory() {
+  if (!state.tournaments.length) return;
+
+  const shouldDelete = confirm("Vil du slette hele historikken? Dette kan ikke fortrydes.");
+  if (!shouldDelete) return;
+
+  state.tournaments = [];
+  saveToStorage(STORAGE_KEYS.tournaments, state.tournaments);
+  renderHistory();
+}
+
 function renderHistory() {
   historyList.innerHTML = "";
   setVisible(historyEmpty, state.tournaments.length === 0);
@@ -761,6 +774,7 @@ generateBtn.addEventListener("click", generateMexicanoTournament);
 addRoundBtn.addEventListener("click", addRounds);
 completeBtn.addEventListener("click", completeTournament);
 statsSortInput.addEventListener("change", renderAggregateStats);
+clearHistoryBtn.addEventListener("click", clearTournamentHistory);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
