@@ -2,10 +2,10 @@ const appCard = document.getElementById("app-card");
 const adminCard = document.getElementById("admin-card");
 const adminPlayerCard = document.getElementById("admin-player-card");
 
-const homeViewBtn = document.getElementById("home-view-btn");
-const currentViewBtn = document.getElementById("current-view-btn");
 const homeView = document.getElementById("home-view");
 const currentView = document.getElementById("current-view");
+const changelogVersion = document.getElementById("changelog-version");
+const changelogCount = document.getElementById("changelog-count");
 
 const savedPlayerForm = document.getElementById("saved-player-form");
 const savedPlayerInput = document.getElementById("saved-player-input");
@@ -37,6 +37,15 @@ const historyEmpty = document.getElementById("history-empty");
 const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
+
+
+const CHANGELOG_ENTRIES = [
+  { version: "v1.0.4", date: "15.03.2026", note: "Rang-nabo genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
+  { version: "v1.0.3", date: "13.03.2026", note: "Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage." },
+  { version: "v1.0.2", date: "13.03.2026", note: "Formularer bruger nu POST som fallback, så siden ikke ender på en tom ?-URL ved submit uden aktiv JavaScript." },
+  { version: "v1.0.1", date: "13.03.2026", note: "Forbedret login-feedback: fejl vises nu direkte under login-formen." },
+  { version: "v1.0.0", date: "13.03.2026", note: "Tilføjet versionshistorik på forsiden og gjort den synlig uden login." }
+];
 
 const STORAGE_KEYS = {
   savedPlayers: "padel_saved_players",
@@ -86,11 +95,14 @@ function loadFromStorage(key, fallback) {
 
 function setActiveView(view) {
   state.activeView = view;
-  const isHome = view === "home";
-  setVisible(homeView, isHome);
-  setVisible(currentView, !isHome);
-  homeViewBtn.classList.toggle("primary", isHome);
-  currentViewBtn.classList.toggle("primary", !isHome);
+  setVisible(homeView, true);
+  setVisible(currentView, true);
+}
+
+function renderChangelogSummary() {
+  const latest = CHANGELOG_ENTRIES[0];
+  if (changelogVersion) changelogVersion.textContent = latest ? `${latest.date} · ${latest.version} — ${latest.note}` : "-";
+  if (changelogCount) changelogCount.textContent = String(CHANGELOG_ENTRIES.length);
 }
 
 function updateDraftInputs() {
@@ -236,7 +248,7 @@ function scheduleMatches(rawMatches, courts, startingRound = 1) {
 }
 
 
-function buildNearestOpponentRound(players, standingsRows, mode, courts, round) {
+function buildNearestOpponentRounds(players, standingsRows, mode, courts, startingRound) {
   const rankByPlayer = new Map(standingsRows.map((row, index) => [row.player, index]));
   const sortedPlayers = [...players].sort((a, b) => {
     const indexA = rankByPlayer.get(a);
@@ -248,32 +260,27 @@ function buildNearestOpponentRound(players, standingsRows, mode, courts, round) 
     return a.localeCompare(b, "da");
   });
 
-  const matches = [];
-
+  const roundMatches = [];
   if (mode === "single") {
     for (let i = 0; i + 1 < sortedPlayers.length; i += 2) {
-      matches.push({
-        teamA: [sortedPlayers[i]],
-        teamB: [sortedPlayers[i + 1]],
-        round,
-        scoreA: null,
-        scoreB: null
+      roundMatches.push({ teamA: [sortedPlayers[i]], teamB: [sortedPlayers[i + 1]] });
+    }
+  } else {
+    for (let i = 0; i + 3 < sortedPlayers.length; i += 4) {
+      roundMatches.push({
+        teamA: [sortedPlayers[i], sortedPlayers[i + 1]],
+        teamB: [sortedPlayers[i + 2], sortedPlayers[i + 3]]
       });
     }
-    return matches;
   }
 
-  for (let i = 0; i + 3 < sortedPlayers.length; i += 4) {
-    matches.push({
-      teamA: [sortedPlayers[i], sortedPlayers[i + 1]],
-      teamB: [sortedPlayers[i + 2], sortedPlayers[i + 3]],
-      round,
-      scoreA: null,
-      scoreB: null
-    });
-  }
-
-  return matches;
+  const perRound = Math.max(1, courts);
+  return roundMatches.map((match, index) => ({
+    ...match,
+    round: startingRound + Math.floor(index / perRound),
+    scoreA: null,
+    scoreB: null
+  }));
 }
 
 function getAggregateStandingsForPlayers(players) {
@@ -304,7 +311,7 @@ function buildNearestDraftMatches(players, mode, courts, existingMatches = []) {
     ? getTournamentStandings({ players, matches: existingMatches })
     : getAggregateStandingsForPlayers(players);
   const firstRound = Math.max(1, existingMatches.reduce((max, m) => Math.max(max, m.round || 0), 0) + 1);
-  return buildNearestOpponentRound(players, standings, mode, courts, firstRound);
+  return buildNearestOpponentRounds(players, standings, mode, courts, firstRound);
 }
 function buildRoundPackage(players, mode, courts, startingRound = 1) {
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
@@ -315,7 +322,8 @@ function getRoundEstimation(players, mode, courts, type) {
   if (!players.length) return { totalMatches: 0, totalRounds: 0 };
   if (type === "nearest") {
     const playersPerCourt = mode === "double" ? 4 : 2;
-    return { totalMatches: Math.floor(players.length / playersPerCourt), totalRounds: 1 };
+    const totalMatches = Math.floor(players.length / playersPerCourt);
+    return { totalMatches, totalRounds: Math.max(1, Math.ceil(totalMatches / Math.max(1, courts))) };
   }
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
   const totalRounds = scheduleMatches(rawMatches, Math.max(1, courts)).reduce((max, m) => Math.max(max, m.round), 0);
@@ -334,7 +342,7 @@ function updateRoundsHint() {
   }
 
   if (type === "nearest") {
-    roundsHint.textContent = `Nærmeste-format: ${totalMatches} kamp(e) i næste runde med ${courts} bane(r).`;
+    roundsHint.textContent = `Rang-nabo: ${totalMatches} kamp(e) fordelt på ca. ${totalRounds} runde(r) med ${courts} bane(r).`;
     return;
   }
 
@@ -443,7 +451,7 @@ function renderSavedPlayers() {
       if (state.draft.players.includes(player.name)) return alert("Spilleren er allerede med i turneringen.");
       if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
       state.draft.players.push(player.name);
-      setActiveView("current");
+      setActiveView("home");
       renderPlayers();
       updateRoundsHint();
       await saveActiveTournament();
@@ -622,7 +630,7 @@ function renderHistory() {
       renderPlayers();
       renderSchedule();
       renderStandings();
-      setActiveView("current");
+      setActiveView("home");
       await saveActiveTournament();
     });
 
@@ -651,12 +659,12 @@ async function generateMexicanoTournament() {
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Nærmeste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rang-nabo" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
   renderSchedule();
   renderStandings();
-  setActiveView("current");
+  setActiveView("home");
   await saveActiveTournament();
 }
 
@@ -665,7 +673,7 @@ async function addRounds() {
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Nærmeste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rang-nabo" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
 
   if (!state.draft.matches.length) {
@@ -676,7 +684,7 @@ async function addRounds() {
 
   renderSchedule();
   renderStandings();
-  setActiveView("current");
+  setActiveView("home");
   await saveActiveTournament();
 }
 
@@ -709,9 +717,6 @@ async function completeTournament() {
   renderHistory();
   alert("Turnering gemt i historik.");
 }
-
-homeViewBtn.addEventListener("click", () => setActiveView("home"));
-currentViewBtn.addEventListener("click", () => setActiveView("current"));
 
 savedPlayerForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -772,6 +777,7 @@ tournamentTypeInput.addEventListener("change", updateRoundsHint);
   setVisible(appCard, true);
 
   setActiveView("home");
+  renderChangelogSummary();
   updateDraftInputs();
   renderSavedPlayers();
   renderPlayers();

@@ -17,33 +17,9 @@
 
       <section id="public-changelog" class="card">
         <h2>Versionshistorik</h2>
-        <p class="muted">Her kan du se de seneste ændringer med dato.</p>
-        <ul class="simple-list changelog-list">
-          <li>
-            <div>
-              <strong>13.03.2026 · v1.0.3</strong><br />
-              Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage.
-            </div>
-          </li>
-          <li>
-            <div>
-              <strong>13.03.2026 · v1.0.2</strong><br />
-              Formularer bruger nu <code>POST</code> som fallback, så siden ikke ender på en tom <code>?</code>-URL ved submit uden aktiv JavaScript.
-            </div>
-          </li>
-          <li>
-            <div>
-              <strong>13.03.2026 · v1.0.1</strong><br />
-              Forbedret login-feedback: fejl vises nu direkte under login-formen, også i tilfælde hvor Supabase ikke returnerer en tydelig fejl.
-            </div>
-          </li>
-          <li>
-            <div>
-              <strong>13.03.2026 · v1.0.0</strong><br />
-              Tilføjet versionshistorik på forsiden og gjort den synlig uden login.
-            </div>
-          </li>
-        </ul>
+        <p class="muted">Viser nu kun den seneste version og hvor mange opdateringer der samlet er lavet.</p>
+        <p><strong>Seneste:</strong> <span id="changelog-version">-</span></p>
+        <p class="muted">Samlet antal opdateringer: <span id="changelog-count">0</span></p>
       </section>
       <section id="app-card">
         <section id="admin-card" class="card hidden">
@@ -65,13 +41,6 @@
           <p class="muted">Her kan du tilknytte en spiller til en vens e-mail, ændre e-mail eller fjerne tilknytning.</p>
           <ul id="admin-player-list" class="simple-list"></ul>
           <div id="admin-player-empty" class="muted">Ingen spillerprofiler endnu.</div>
-        </section>
-
-        <section class="card">
-          <div class="view-tabs">
-            <button id="home-view-btn" type="button" class="primary">Forside</button>
-            <button id="current-view-btn" type="button">Nuværende turnering</button>
-          </div>
         </section>
 
         <section id="home-view">
@@ -107,7 +76,7 @@
           </section>
         </section>
 
-        <section id="current-view" class="hidden">
+        <section id="current-view">
           <section class="card">
             <h2>Nuværende turnering</h2>
             <form id="player-form" class="row" method="post">
@@ -124,7 +93,7 @@
                 Turnerings-type
                 <select id="tournament-type">
                   <option value="classic">Almindelig Mexicano</option>
-                  <option value="nearest">Nærmeste i samlet stilling</option>
+                  <option value="nearest">Rang-nabo (samlet stilling)</option>
                 </select>
               </label>
               <label>
