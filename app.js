@@ -22,6 +22,7 @@ const ballsPerRoundInput = document.getElementById("balls-per-round");
 const courtsCountInput = document.getElementById("courts-count");
 const roundsHint = document.getElementById("rounds-hint");
 const tournamentNameInput = document.getElementById("tournament-name");
+const tournamentTypeInput = document.getElementById("tournament-type");
 const generateBtn = document.getElementById("generate-btn");
 const addRoundBtn = document.getElementById("add-round-btn");
 const completeBtn = document.getElementById("complete-btn");
@@ -50,6 +51,7 @@ const state = {
   draft: {
     players: [],
     mode: "single",
+    type: "classic",
     ballsPerRound: 24,
     courts: 1,
     name: "",
@@ -94,6 +96,7 @@ function setActiveView(view) {
 function updateDraftInputs() {
   tournamentNameInput.value = state.draft.name;
   courtTypeInput.value = state.draft.mode;
+  tournamentTypeInput.value = state.draft.type || "classic";
   ballsPerRoundInput.value = state.draft.ballsPerRound;
   courtsCountInput.value = Math.max(1, Number(state.draft.courts) || 1);
   updateRoundsHint();
@@ -104,7 +107,7 @@ async function saveActiveTournament() {
 }
 
 async function clearActiveTournament() {
-  state.draft = { players: [], mode: "single", ballsPerRound: 24, courts: 1, name: "", matches: [] };
+  state.draft = { players: [], mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
   updateDraftInputs();
   saveToStorage(STORAGE_KEYS.draft, state.draft);
 }
@@ -232,13 +235,88 @@ function scheduleMatches(rawMatches, courts, startingRound = 1) {
   return scheduled;
 }
 
+
+function buildNearestOpponentRound(players, standingsRows, mode, courts, round) {
+  const rankByPlayer = new Map(standingsRows.map((row, index) => [row.player, index]));
+  const sortedPlayers = [...players].sort((a, b) => {
+    const indexA = rankByPlayer.get(a);
+    const indexB = rankByPlayer.get(b);
+    if (indexA === undefined && indexB === undefined) return a.localeCompare(b, "da");
+    if (indexA === undefined) return 1;
+    if (indexB === undefined) return -1;
+    if (indexA !== indexB) return indexA - indexB;
+    return a.localeCompare(b, "da");
+  });
+
+  const maxMatches = Math.max(1, courts);
+  const matches = [];
+
+  if (mode === "single") {
+    const usablePlayers = sortedPlayers.slice(0, maxMatches * 2);
+    for (let i = 0; i + 1 < usablePlayers.length; i += 2) {
+      matches.push({
+        teamA: [usablePlayers[i]],
+        teamB: [usablePlayers[i + 1]],
+        round,
+        scoreA: null,
+        scoreB: null
+      });
+    }
+    return matches;
+  }
+
+  const usablePlayers = sortedPlayers.slice(0, maxMatches * 4);
+  for (let i = 0; i + 3 < usablePlayers.length; i += 4) {
+    matches.push({
+      teamA: [usablePlayers[i], usablePlayers[i + 1]],
+      teamB: [usablePlayers[i + 2], usablePlayers[i + 3]],
+      round,
+      scoreA: null,
+      scoreB: null
+    });
+  }
+
+  return matches;
+}
+
+function getAggregateStandingsForPlayers(players) {
+  const aggregatedRows = getBaseAggregateStats().sort((a, b) => b.tournamentWins - a.tournamentWins || b.totalBallsWon - a.totalBallsWon || b.avgBallsPerMatch - a.avgBallsPerMatch || a.player.localeCompare(b.player, "da"));
+  const aggregateByPlayer = new Map(aggregatedRows.map((row, index) => [row.player, { ...row, index }]));
+
+  return players
+    .map((player) => ({
+      player,
+      tournamentWins: aggregateByPlayer.get(player)?.tournamentWins ?? 0,
+      totalBallsWon: aggregateByPlayer.get(player)?.totalBallsWon ?? 0,
+      avgBallsPerMatch: aggregateByPlayer.get(player)?.avgBallsPerMatch ?? 0,
+      aggregateIndex: aggregateByPlayer.get(player)?.index ?? Number.MAX_SAFE_INTEGER
+    }))
+    .sort(
+      (a, b) =>
+        a.aggregateIndex - b.aggregateIndex ||
+        b.tournamentWins - a.tournamentWins ||
+        b.totalBallsWon - a.totalBallsWon ||
+        b.avgBallsPerMatch - a.avgBallsPerMatch ||
+        a.player.localeCompare(b.player, "da")
+    );
+}
+
+function buildNearestDraftMatches(players, mode, courts, existingMatches = []) {
+  const standings = getAggregateStandingsForPlayers(players);
+  const firstRound = Math.max(1, existingMatches.reduce((max, m) => Math.max(max, m.round || 0), 0) + 1);
+  return buildNearestOpponentRound(players, standings, mode, courts, firstRound);
+}
 function buildRoundPackage(players, mode, courts, startingRound = 1) {
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
   return scheduleMatches(rawMatches, courts, startingRound);
 }
 
-function getRoundEstimation(players, mode, courts) {
+function getRoundEstimation(players, mode, courts, type) {
   if (!players.length) return { totalMatches: 0, totalRounds: 0 };
+  if (type === "nearest") {
+    const playersPerCourt = mode === "double" ? 4 : 2;
+    return { totalMatches: Math.min(Math.floor(players.length / playersPerCourt), Math.max(1, courts)), totalRounds: 1 };
+  }
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
   const totalRounds = scheduleMatches(rawMatches, Math.max(1, courts)).reduce((max, m) => Math.max(max, m.round), 0);
   return { totalMatches: rawMatches.length, totalRounds };
@@ -246,24 +324,34 @@ function getRoundEstimation(players, mode, courts) {
 
 function updateRoundsHint() {
   const mode = courtTypeInput.value;
+  const type = tournamentTypeInput.value;
   const courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  const { totalMatches, totalRounds } = getRoundEstimation(state.draft.players, mode, courts);
+  const { totalMatches, totalRounds } = getRoundEstimation(state.draft.players, mode, courts, type);
 
   if (!state.draft.players.length) {
     roundsHint.textContent = "Tilføj spillere for at se antal mulige kampe og runder.";
     return;
   }
 
+  if (type === "nearest") {
+    roundsHint.textContent = `Nærmeste-format: ${totalMatches} kamp(e) i næste runde med ${courts} bane(r).`;
+    return;
+  }
+
   roundsHint.textContent = `Kombinationer: ${totalMatches} kampe fordelt på ca. ${totalRounds} runder med ${courts} bane(r).`;
 }
 
-function buildDraftMatches(players, mode, courts) {
+function buildDraftMatches(players, mode, courts, type) {
+  if (type === "nearest") return buildNearestDraftMatches(players, mode, courts);
   return buildRoundPackage(players, mode, courts);
 }
 
 function appendRoundsToDraft() {
   const nextRound = state.draft.matches.reduce((max, m) => Math.max(max, m.round), 0) + 1;
-  const extraMatches = buildRoundPackage(state.draft.players, state.draft.mode, state.draft.courts, nextRound);
+  const extraMatches =
+    state.draft.type === "nearest"
+      ? buildNearestDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.matches)
+      : buildRoundPackage(state.draft.players, state.draft.mode, state.draft.courts, nextRound);
   state.draft.matches.push(...extraMatches);
 }
 
@@ -465,7 +553,7 @@ function renderStandings() {
   standingsRoot.appendChild(table);
 }
 
-function getAggregateStats() {
+function getBaseAggregateStats() {
   const stats = new Map();
   state.tournaments.forEach((tournament) => {
     const standings = getTournamentStandings(tournament.data);
@@ -480,10 +568,14 @@ function getAggregateStats() {
     });
   });
 
-  const rows = [...stats.values()].map((row) => ({
+  return [...stats.values()].map((row) => ({
     ...row,
     avgBallsPerMatch: row.totalMatches ? Number((row.totalBallsWon / row.totalMatches).toFixed(2)) : 0
   }));
+}
+
+function getAggregateStats() {
+  const rows = getBaseAggregateStats();
 
   const sortBy = statsSortInput.value;
   if (sortBy === "totalBalls") rows.sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.tournamentWins - a.tournamentWins);
@@ -525,6 +617,7 @@ function renderHistory() {
     loadBtn.addEventListener("click", async () => {
       state.draft = clone(tournament.data);
       if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
+      if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
       updateDraftInputs();
       renderPlayers();
       renderSchedule();
@@ -555,11 +648,12 @@ function validateMexicanoSetup() {
 
 async function generateMexicanoTournament() {
   state.draft.mode = courtTypeInput.value;
+  state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  state.draft.name = tournamentNameInput.value.trim() || `Mexicano ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Nærmeste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
-  state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts);
+  state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -568,13 +662,14 @@ async function generateMexicanoTournament() {
 
 async function addRounds() {
   state.draft.mode = courtTypeInput.value;
+  state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  state.draft.name = tournamentNameInput.value.trim() || `Mexicano ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Nærmeste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
 
   if (!state.draft.matches.length) {
-    state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts);
+    state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
   } else {
     appendRoundsToDraft();
   }
@@ -597,6 +692,7 @@ async function completeTournament() {
   const payload = {
     players: clone(state.draft.players),
     mode: state.draft.mode,
+    type: state.draft.type || "classic",
     ballsPerRound: state.draft.ballsPerRound,
     courts: state.draft.courts,
     name: state.draft.name,
@@ -662,12 +758,14 @@ completeBtn.addEventListener("click", completeTournament);
 statsSortInput.addEventListener("change", renderAggregateStats);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
+tournamentTypeInput.addEventListener("change", updateRoundsHint);
 
 (function init() {
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
   state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []);
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
   if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
+  if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
 
   setVisible(adminCard, false);
   setVisible(adminPlayerCard, false);
