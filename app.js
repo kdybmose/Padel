@@ -248,15 +248,13 @@ function buildNearestOpponentRound(players, standingsRows, mode, courts, round) 
     return a.localeCompare(b, "da");
   });
 
-  const maxMatches = Math.max(1, courts);
   const matches = [];
 
   if (mode === "single") {
-    const usablePlayers = sortedPlayers.slice(0, maxMatches * 2);
-    for (let i = 0; i + 1 < usablePlayers.length; i += 2) {
+    for (let i = 0; i + 1 < sortedPlayers.length; i += 2) {
       matches.push({
-        teamA: [usablePlayers[i]],
-        teamB: [usablePlayers[i + 1]],
+        teamA: [sortedPlayers[i]],
+        teamB: [sortedPlayers[i + 1]],
         round,
         scoreA: null,
         scoreB: null
@@ -265,11 +263,10 @@ function buildNearestOpponentRound(players, standingsRows, mode, courts, round) 
     return matches;
   }
 
-  const usablePlayers = sortedPlayers.slice(0, maxMatches * 4);
-  for (let i = 0; i + 3 < usablePlayers.length; i += 4) {
+  for (let i = 0; i + 3 < sortedPlayers.length; i += 4) {
     matches.push({
-      teamA: [usablePlayers[i], usablePlayers[i + 1]],
-      teamB: [usablePlayers[i + 2], usablePlayers[i + 3]],
+      teamA: [sortedPlayers[i], sortedPlayers[i + 1]],
+      teamB: [sortedPlayers[i + 2], sortedPlayers[i + 3]],
       round,
       scoreA: null,
       scoreB: null
@@ -302,7 +299,10 @@ function getAggregateStandingsForPlayers(players) {
 }
 
 function buildNearestDraftMatches(players, mode, courts, existingMatches = []) {
-  const standings = getAggregateStandingsForPlayers(players);
+  const hasCurrentResults = existingMatches.some((match) => Number.isInteger(match.scoreA) && Number.isInteger(match.scoreB));
+  const standings = hasCurrentResults
+    ? getTournamentStandings({ players, matches: existingMatches })
+    : getAggregateStandingsForPlayers(players);
   const firstRound = Math.max(1, existingMatches.reduce((max, m) => Math.max(max, m.round || 0), 0) + 1);
   return buildNearestOpponentRound(players, standings, mode, courts, firstRound);
 }
@@ -315,7 +315,7 @@ function getRoundEstimation(players, mode, courts, type) {
   if (!players.length) return { totalMatches: 0, totalRounds: 0 };
   if (type === "nearest") {
     const playersPerCourt = mode === "double" ? 4 : 2;
-    return { totalMatches: Math.min(Math.floor(players.length / playersPerCourt), Math.max(1, courts)), totalRounds: 1 };
+    return { totalMatches: Math.floor(players.length / playersPerCourt), totalRounds: 1 };
   }
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
   const totalRounds = scheduleMatches(rawMatches, Math.max(1, courts)).reduce((max, m) => Math.max(max, m.round), 0);
