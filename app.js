@@ -178,8 +178,13 @@ function loadFromStorage(key, fallback) {
   return key in remoteStorage ? clone(remoteStorage[key]) : fallback;
 }
 
+function getConfiguredAdminPin() {
+  if (window.PADEL_ADMIN_PIN === undefined || window.PADEL_ADMIN_PIN === null) return "";
+  return String(window.PADEL_ADMIN_PIN).trim();
+}
+
 function isAdminPinConfigured() {
-  return typeof window.PADEL_ADMIN_PIN === "string" && window.PADEL_ADMIN_PIN.trim().length > 0;
+  return getConfiguredAdminPin().length > 0;
 }
 
 function hasAdminAccess() {
@@ -211,10 +216,13 @@ function updateAdminAccessUi() {
 function requireAdminAccess() {
   if (hasAdminAccess()) return true;
 
+  const configuredPin = getConfiguredAdminPin();
+  if (!configuredPin) return true;
+
   const enteredPin = prompt("Indtast admin-kode for at redigere turneringer:");
   if (typeof enteredPin !== "string") return false;
 
-  if (enteredPin.trim() !== window.PADEL_ADMIN_PIN.trim()) {
+  if (enteredPin.trim() !== configuredPin) {
     alert("Forkert admin-kode.");
     return false;
   }
