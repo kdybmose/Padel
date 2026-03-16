@@ -250,6 +250,14 @@ function setEditingEnabled(enabled) {
   });
 }
 
+function isDraftLockedForPlayerChanges() {
+  return state.draft.matches.length > 0;
+}
+
+function getPreferredScheduleMode() {
+  return (Number(state.draft.courts) || 1) <= 1 ? "full" : "focus";
+}
+
 function updateRoundActionButtons() {
   const hasMatches = state.draft.matches.length > 0;
   const editingEnabled = hasAdminAccess();
@@ -607,9 +615,10 @@ function renderPlayers() {
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.textContent = "✕";
-    removeBtn.disabled = !hasAdminAccess();
+    removeBtn.disabled = !hasAdminAccess() || isDraftLockedForPlayerChanges();
     removeBtn.addEventListener("click", async () => {
       if (!requireAdminAccess()) return;
+      if (isDraftLockedForPlayerChanges()) return alert("Spillerlisten kan ikke ændres efter turneringen er startet.");
       state.draft.players.splice(index, 1);
       const minPlayers = state.draft.mode === "double" ? 4 : 2;
       if (state.draft.players.length < minPlayers) state.draft.matches = [];
@@ -622,6 +631,8 @@ function renderPlayers() {
     li.appendChild(removeBtn);
     playerList.appendChild(li);
   });
+
+  if (savedPlayerSelect) savedPlayerSelect.disabled = !hasAdminAccess() || isDraftLockedForPlayerChanges();
 }
 
 function renderSavedPlayers() {
@@ -639,9 +650,10 @@ function renderSavedPlayers() {
     const useBtn = document.createElement("button");
     useBtn.type = "button";
     useBtn.textContent = "Brug i turnering";
-    useBtn.disabled = !hasAdminAccess();
+    useBtn.disabled = !hasAdminAccess() || isDraftLockedForPlayerChanges();
     useBtn.addEventListener("click", async () => {
       if (!requireAdminAccess()) return;
+      if (isDraftLockedForPlayerChanges()) return alert("Spillerlisten kan ikke ændres efter turneringen er startet.");
       if (state.draft.players.includes(player.name)) return alert("Spilleren er allerede med i turneringen.");
       if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
       state.draft.players.push(player.name);
@@ -878,24 +890,6 @@ function renderHistory() {
     const winner = standings[0];
     const li = document.createElement("li");
     li.innerHTML = `<div><strong>${tournament.name}</strong><br><small>${new Date(tournament.updated_at).toLocaleString("da-DK")}</small><br><small>Vinder: ${winner ? `${winner.player} (${winner.totalBallsWon} bolde)` : "-"}</small></div>`;
-
-    const loadBtn = document.createElement("button");
-    loadBtn.type = "button";
-    loadBtn.textContent = "Åbn turnering";
-    loadBtn.addEventListener("click", async () => {
-      state.draft = clone(tournament.data);
-      if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
-      if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
-      state.scheduleViewMode = "full";
-      updateDraftInputs();
-      renderPlayers();
-      renderSchedule();
-      renderStandings();
-      setActiveView("current");
-      await saveActiveTournament();
-    });
-
-    li.appendChild(loadBtn);
     historyList.appendChild(li);
   });
 
@@ -928,7 +922,7 @@ async function generateMexicanoTournament() {
   state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
-  state.scheduleViewMode = "focus";
+  state.scheduleViewMode = getPreferredScheduleMode();
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -950,7 +944,7 @@ async function addRounds() {
     appendRoundsToDraft();
   }
 
-  state.scheduleViewMode = "focus";
+  state.scheduleViewMode = getPreferredScheduleMode();
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -1007,6 +1001,7 @@ savedPlayerForm.addEventListener("submit", (event) => {
 playerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!requireAdminAccess()) return;
+  if (isDraftLockedForPlayerChanges()) return alert("Spillerlisten kan ikke ændres efter turneringen er startet.");
   const selectedName = savedPlayerSelect.value.trim();
   if (!selectedName) return alert("Vælg en spiller fra databasen.");
   if (state.draft.players.includes(selectedName)) return alert("Spilleren er allerede med i turneringen.");
