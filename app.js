@@ -41,7 +41,7 @@ const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 
 const CHANGELOG_ENTRIES = [
-  { version: "v1.0.4", date: "15.03.2026", note: "Rang-nabo genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
+  { version: "v1.0.4", date: "15.03.2026", note: "Rangliste genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
   { version: "v1.0.3", date: "13.03.2026", note: "Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage." },
   { version: "v1.0.2", date: "13.03.2026", note: "Formularer bruger nu POST som fallback, så siden ikke ender på en tom ?-URL ved submit uden aktiv JavaScript." },
   { version: "v1.0.1", date: "13.03.2026", note: "Forbedret login-feedback: fejl vises nu direkte under login-formen." },
@@ -343,7 +343,7 @@ function updateRoundsHint() {
   }
 
   if (type === "nearest") {
-    roundsHint.textContent = `Rang-nabo: ${totalMatches} kamp(e) fordelt på ca. ${totalRounds} runde(r) med ${courts} bane(r).`;
+    roundsHint.textContent = `Rangliste: ${totalMatches} kamp(e) fordelt på ca. ${totalRounds} runde(r) med ${courts} bane(r).`;
     return;
   }
 
@@ -672,7 +672,7 @@ async function generateMexicanoTournament() {
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rang-nabo" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
   renderSchedule();
@@ -686,7 +686,7 @@ async function addRounds() {
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
-  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rang-nabo" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
 
   if (!state.draft.matches.length) {
