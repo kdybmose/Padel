@@ -107,3 +107,5 @@ summary { cursor: pointer; color: var(--accent-2); }
     z-index: 20;
   }
 }
+
+.schedule-controls { margin-bottom: 0.75rem; }
