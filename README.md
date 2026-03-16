@@ -25,7 +25,10 @@ Fil: `supabase.config.js`
 ```js
 window.SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
 window.SUPABASE_ANON_KEY = "YOUR_PUBLISHABLE_KEY";
+window.PADEL_ADMIN_PIN = "SÆT_EN_HEMMELIG_KODE";
 ```
+
+`PADEL_ADMIN_PIN` bruges til at låse redigering op i UI, så kun administratoren kan ændre turneringer/resultater.
 
 ## 2) Kør SQL migration i Supabase
 

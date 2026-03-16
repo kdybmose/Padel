@@ -48,9 +48,12 @@ const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
 const clearHistoryBtn = document.getElementById("clear-history-btn");
+const adminAccessBtn = document.getElementById("admin-access-btn");
+const adminAccessStatus = document.getElementById("admin-access-status");
 
 
 const CHANGELOG_ENTRIES = [
+  { version: "v1.0.7", date: "16.03.2026", note: "Kun admin med adgangskode kan redigere turneringsdata; andre har skrivebeskyttet visning." },
   { version: "v1.0.6", date: "16.03.2026", note: "Data gemmes nu i Supabase-database, så aktiv turnering og historik ikke forsvinder når en session lukker." },
   { version: "v1.0.5", date: "16.03.2026", note: "Fjernet localStorage. Data lever nu kun i den åbne session og deles ikke mellem enheder." },
   { version: "v1.0.4", date: "15.03.2026", note: "Rangliste genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
@@ -76,6 +79,7 @@ const state = {
   savedPlayers: [],
   tournaments: [],
   activeView: "home",
+  isAdminUnlocked: false,
   draft: {
     players: [],
     mode: "single",
@@ -172,6 +176,79 @@ function saveToStorage(key, data) {
 
 function loadFromStorage(key, fallback) {
   return key in remoteStorage ? clone(remoteStorage[key]) : fallback;
+}
+
+function isAdminPinConfigured() {
+  return typeof window.PADEL_ADMIN_PIN === "string" && window.PADEL_ADMIN_PIN.trim().length > 0;
+}
+
+function hasAdminAccess() {
+  return !isAdminPinConfigured() || state.isAdminUnlocked;
+}
+
+function updateAdminAccessUi() {
+  if (!adminAccessStatus || !adminAccessBtn) return;
+
+  if (!isAdminPinConfigured()) {
+    adminAccessStatus.textContent = "Admin-PIN er ikke sat. Alle kan redigere.";
+    adminAccessBtn.textContent = "PIN ikke konfigureret";
+    adminAccessBtn.disabled = true;
+    return;
+  }
+
+  if (state.isAdminUnlocked) {
+    adminAccessStatus.textContent = "Admin-adgang aktiv. Redigering er tilladt.";
+    adminAccessBtn.textContent = "Admin låst op";
+    adminAccessBtn.disabled = true;
+    return;
+  }
+
+  adminAccessStatus.textContent = "Skriveadgang låst (kun læsning).";
+  adminAccessBtn.textContent = "Lås op som admin";
+  adminAccessBtn.disabled = false;
+}
+
+function requireAdminAccess() {
+  if (hasAdminAccess()) return true;
+
+  const enteredPin = prompt("Indtast admin-kode for at redigere turneringer:");
+  if (typeof enteredPin !== "string") return false;
+
+  if (enteredPin.trim() !== window.PADEL_ADMIN_PIN.trim()) {
+    alert("Forkert admin-kode.");
+    return false;
+  }
+
+  state.isAdminUnlocked = true;
+  updateAdminAccessUi();
+  renderSavedPlayers();
+  renderPlayers();
+  renderSchedule();
+  return true;
+}
+
+function setEditingEnabled(enabled) {
+  const controls = [
+    savedPlayerInput,
+    savedPlayerSelect,
+    tournamentNameInput,
+    tournamentTypeInput,
+    courtTypeInput,
+    ballsPerRoundInput,
+    courtsCountInput,
+    generateBtn,
+    addRoundBtn,
+    completeBtn,
+    mobileGenerateBtn,
+    mobileAddRoundBtn,
+    mobileCompleteBtn,
+    clearHistoryBtn
+  ];
+
+  controls.forEach((control) => {
+    if (!control) return;
+    control.disabled = !enabled;
+  });
 }
 
 function setActiveView(view) {
@@ -517,6 +594,7 @@ function syncDraftPlayersWithDatabase() {
 }
 
 function renderPlayers() {
+  setEditingEnabled(hasAdminAccess());
   playerList.innerHTML = "";
   state.draft.players.forEach((name, index) => {
     const li = document.createElement("li");
@@ -524,7 +602,9 @@ function renderPlayers() {
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.textContent = "✕";
+    removeBtn.disabled = !hasAdminAccess();
     removeBtn.addEventListener("click", async () => {
+      if (!requireAdminAccess()) return;
       state.draft.players.splice(index, 1);
       const minPlayers = state.draft.mode === "double" ? 4 : 2;
       if (state.draft.players.length < minPlayers) state.draft.matches = [];
@@ -540,6 +620,7 @@ function renderPlayers() {
 }
 
 function renderSavedPlayers() {
+  setEditingEnabled(hasAdminAccess());
   savedPlayerList.innerHTML = "";
   setVisible(savedPlayerEmpty, state.savedPlayers.length === 0);
 
@@ -553,7 +634,9 @@ function renderSavedPlayers() {
     const useBtn = document.createElement("button");
     useBtn.type = "button";
     useBtn.textContent = "Brug i turnering";
+    useBtn.disabled = !hasAdminAccess();
     useBtn.addEventListener("click", async () => {
+      if (!requireAdminAccess()) return;
       if (state.draft.players.includes(player.name)) return alert("Spilleren er allerede med i turneringen.");
       if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
       state.draft.players.push(player.name);
@@ -566,7 +649,9 @@ function renderSavedPlayers() {
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.textContent = "Slet";
+    deleteBtn.disabled = !hasAdminAccess();
     deleteBtn.addEventListener("click", async () => {
+      if (!requireAdminAccess()) return;
       state.savedPlayers = state.savedPlayers.filter((saved) => saved.id !== player.id);
       syncDraftPlayersWithDatabase();
       saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
@@ -587,6 +672,7 @@ function renderSavedPlayers() {
 }
 
 function renderSchedule() {
+  setEditingEnabled(hasAdminAccess());
   scheduleRoot.innerHTML = "";
   setVisible(scheduleEmpty, state.draft.matches.length === 0);
 
@@ -607,6 +693,7 @@ function renderSchedule() {
     scoreALabel.textContent = `${getDisplayName(match.teamA)} score`;
     const inputA = document.createElement("input");
     inputA.type = "number";
+    inputA.disabled = !hasAdminAccess();
     inputA.min = "0";
     inputA.max = String(state.draft.ballsPerRound);
     inputA.value = Number.isInteger(match.scoreA) ? String(match.scoreA) : "";
@@ -616,12 +703,17 @@ function renderSchedule() {
     scoreBLabel.textContent = `${getDisplayName(match.teamB)} score`;
     const inputB = document.createElement("input");
     inputB.type = "number";
+    inputB.disabled = !hasAdminAccess();
     inputB.min = "0";
     inputB.max = String(state.draft.ballsPerRound);
     inputB.value = Number.isInteger(match.scoreB) ? String(match.scoreB) : "";
     scoreBLabel.appendChild(inputB);
 
     const applyScore = async (changedInput, otherInput) => {
+      if (!requireAdminAccess()) {
+        renderSchedule();
+        return;
+      }
       const value = Number(changedInput.value);
       if (!Number.isFinite(value) || value < 0 || value > state.draft.ballsPerRound) {
         alert(`Indtast et tal mellem 0 og ${state.draft.ballsPerRound}.`);
@@ -730,6 +822,7 @@ function renderAggregateStats() {
 
 
 async function clearTournamentHistory() {
+  if (!requireAdminAccess()) return;
   if (!state.tournaments.length) return;
 
   const shouldDelete = confirm("Vil du slette hele historikken? Dette kan ikke fortrydes.");
@@ -786,6 +879,7 @@ function validateMexicanoSetup() {
 }
 
 async function generateMexicanoTournament() {
+  if (!requireAdminAccess()) return;
   state.draft.mode = courtTypeInput.value;
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
@@ -800,6 +894,7 @@ async function generateMexicanoTournament() {
 }
 
 async function addRounds() {
+  if (!requireAdminAccess()) return;
   state.draft.mode = courtTypeInput.value;
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
@@ -820,6 +915,7 @@ async function addRounds() {
 }
 
 async function completeTournament() {
+  if (!requireAdminAccess()) return;
   if (!validateMexicanoSetup()) return;
   if (!state.draft.matches.length) return alert("Generér mindst én runde før du afslutter.");
 
@@ -851,6 +947,7 @@ async function completeTournament() {
 
 savedPlayerForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (!requireAdminAccess()) return;
   const name = savedPlayerInput.value.trim();
   if (!name) return;
   if (state.savedPlayers.some((player) => player.name.toLowerCase() === name.toLowerCase())) {
@@ -866,6 +963,7 @@ savedPlayerForm.addEventListener("submit", (event) => {
 
 playerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!requireAdminAccess()) return;
   const selectedName = savedPlayerSelect.value.trim();
   if (!selectedName) return alert("Vælg en spiller fra databasen.");
   if (state.draft.players.includes(selectedName)) return alert("Spilleren er allerede med i turneringen.");
@@ -895,6 +993,9 @@ clearHistoryBtn.addEventListener("click", clearTournamentHistory);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
+adminAccessBtn.addEventListener("click", () => {
+  requireAdminAccess();
+});
 
 (async function init() {
   await hydrateRemoteStorage();
@@ -910,6 +1011,8 @@ tournamentTypeInput.addEventListener("change", updateRoundsHint);
   setVisible(appCard, true);
 
   setActiveView("home");
+  updateAdminAccessUi();
+  setEditingEnabled(hasAdminAccess());
   renderChangelogSummary();
   updateDraftInputs();
   renderSavedPlayers();
