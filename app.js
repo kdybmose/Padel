@@ -259,6 +259,17 @@ function setEditingEnabled(enabled) {
   });
 }
 
+function updateRoundActionButtons() {
+  const hasMatches = state.draft.matches.length > 0;
+  const editingEnabled = hasAdminAccess();
+
+  if (generateBtn) generateBtn.disabled = !editingEnabled || hasMatches;
+  if (mobileGenerateBtn) mobileGenerateBtn.disabled = !editingEnabled || hasMatches;
+
+  if (addRoundBtn) addRoundBtn.disabled = !editingEnabled;
+  if (mobileAddRoundBtn) mobileAddRoundBtn.disabled = !editingEnabled;
+}
+
 function setActiveView(view) {
   state.activeView = view;
 
@@ -681,6 +692,7 @@ function renderSavedPlayers() {
 
 function renderSchedule() {
   setEditingEnabled(hasAdminAccess());
+  updateRoundActionButtons();
   scheduleRoot.innerHTML = "";
   setVisible(scheduleEmpty, state.draft.matches.length === 0);
 
@@ -888,6 +900,10 @@ function validateMexicanoSetup() {
 
 async function generateMexicanoTournament() {
   if (!requireAdminAccess()) return;
+  if (state.draft.matches.length) {
+    alert("Turneringen er i gang. Brug 'Tilføj flere runder' i stedet for at generere på ny.");
+    return;
+  }
   state.draft.mode = courtTypeInput.value;
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
