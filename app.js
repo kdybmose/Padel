@@ -5,8 +5,6 @@ const adminPlayerCard = document.getElementById("admin-player-card");
 const homeView = document.getElementById("home-view");
 const currentView = document.getElementById("current-view");
 const playersView = document.getElementById("players-view");
-const changelogVersion = document.getElementById("changelog-version");
-const changelogCount = document.getElementById("changelog-count");
 
 const savedPlayerForm = document.getElementById("saved-player-form");
 const savedPlayerInput = document.getElementById("saved-player-input");
@@ -36,6 +34,8 @@ const mobilePlayersTab = document.getElementById("mobile-players-tab");
 const mobileGenerateBtn = document.getElementById("mobile-generate-btn");
 const mobileAddRoundBtn = document.getElementById("mobile-add-round-btn");
 const mobileCompleteBtn = document.getElementById("mobile-complete-btn");
+const focusViewBtn = document.getElementById("focus-view-btn");
+const fullViewBtn = document.getElementById("full-view-btn");
 
 const scheduleRoot = document.getElementById("schedule");
 const scheduleEmpty = document.getElementById("schedule-empty");
@@ -52,16 +52,6 @@ const adminAccessBtn = document.getElementById("admin-access-btn");
 const adminAccessStatus = document.getElementById("admin-access-status");
 
 
-const CHANGELOG_ENTRIES = [
-  { version: "v1.0.7", date: "16.03.2026", note: "Kun admin med adgangskode kan redigere turneringsdata; andre har skrivebeskyttet visning." },
-  { version: "v1.0.6", date: "16.03.2026", note: "Data gemmes nu i Supabase-database, så aktiv turnering og historik ikke forsvinder når en session lukker." },
-  { version: "v1.0.5", date: "16.03.2026", note: "Fjernet localStorage. Data lever nu kun i den åbne session og deles ikke mellem enheder." },
-  { version: "v1.0.4", date: "15.03.2026", note: "Rangliste genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
-  { version: "v1.0.3", date: "13.03.2026", note: "Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage." },
-  { version: "v1.0.2", date: "13.03.2026", note: "Formularer bruger nu POST som fallback, så siden ikke ender på en tom ?-URL ved submit uden aktiv JavaScript." },
-  { version: "v1.0.1", date: "13.03.2026", note: "Forbedret login-feedback: fejl vises nu direkte under login-formen." },
-  { version: "v1.0.0", date: "13.03.2026", note: "Tilføjet versionshistorik på forsiden og gjort den synlig uden login." }
-];
 
 const STORAGE_KEYS = {
   savedPlayers: "padel_saved_players",
@@ -80,6 +70,7 @@ const state = {
   tournaments: [],
   activeView: "home",
   isAdminUnlocked: false,
+  scheduleViewMode: "full",
   draft: {
     players: [],
     mode: "single",
@@ -259,6 +250,17 @@ function setEditingEnabled(enabled) {
   });
 }
 
+function updateRoundActionButtons() {
+  const hasMatches = state.draft.matches.length > 0;
+  const editingEnabled = hasAdminAccess();
+
+  if (generateBtn) generateBtn.disabled = !editingEnabled || hasMatches;
+  if (mobileGenerateBtn) mobileGenerateBtn.disabled = !editingEnabled || hasMatches;
+
+  if (addRoundBtn) addRoundBtn.disabled = !editingEnabled;
+  if (mobileAddRoundBtn) mobileAddRoundBtn.disabled = !editingEnabled;
+}
+
 function setActiveView(view) {
   state.activeView = view;
 
@@ -281,12 +283,6 @@ function setActiveView(view) {
   });
 }
 
-function renderChangelogSummary() {
-  const latest = CHANGELOG_ENTRIES[0];
-  if (changelogVersion) changelogVersion.textContent = latest ? `${latest.date} · ${latest.version} — ${latest.note}` : "-";
-  if (changelogCount) changelogCount.textContent = String(CHANGELOG_ENTRIES.length);
-}
-
 function updateDraftInputs() {
   tournamentNameInput.value = state.draft.name;
   courtTypeInput.value = state.draft.mode;
@@ -302,6 +298,7 @@ async function saveActiveTournament() {
 
 async function clearActiveTournament() {
   state.draft = { players: [], mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
+  state.scheduleViewMode = "full";
   updateDraftInputs();
   saveToStorage(STORAGE_KEYS.draft, state.draft);
 }
@@ -679,12 +676,42 @@ function renderSavedPlayers() {
   renderSavedPlayerSelector();
 }
 
+function getCurrentMatchIndex() {
+  if (!state.draft.matches.length) return -1;
+  const firstIncomplete = state.draft.matches.findIndex((match) => !Number.isInteger(match.scoreA) || !Number.isInteger(match.scoreB));
+  if (firstIncomplete >= 0) return firstIncomplete;
+  return state.draft.matches.length - 1;
+}
+
+function getVisibleMatches() {
+  if (state.scheduleViewMode === "full") return state.draft.matches;
+  const currentIndex = getCurrentMatchIndex();
+  if (currentIndex < 0) return [];
+  return state.draft.matches.filter((_, index) => index === currentIndex || index === currentIndex + 1);
+}
+
+function updateScheduleViewControls() {
+  const hasMatches = state.draft.matches.length > 0;
+  if (focusViewBtn) {
+    focusViewBtn.disabled = !hasMatches || state.scheduleViewMode === "focus";
+    focusViewBtn.classList.toggle("primary", state.scheduleViewMode === "focus");
+  }
+  if (fullViewBtn) {
+    fullViewBtn.disabled = !hasMatches || state.scheduleViewMode === "full";
+    fullViewBtn.classList.toggle("primary", state.scheduleViewMode === "full");
+  }
+}
+
 function renderSchedule() {
   setEditingEnabled(hasAdminAccess());
+  updateRoundActionButtons();
   scheduleRoot.innerHTML = "";
   setVisible(scheduleEmpty, state.draft.matches.length === 0);
+  updateScheduleViewControls();
 
-  state.draft.matches.forEach((match) => {
+  const visibleMatches = getVisibleMatches();
+
+  visibleMatches.forEach((match) => {
     const row = document.createElement("article");
     row.className = "match";
     const title = document.createElement("div");
@@ -743,6 +770,7 @@ function renderSchedule() {
         match.scoreA = adjusted;
       }
 
+      renderSchedule();
       renderStandings();
       await saveActiveTournament();
     };
@@ -858,6 +886,7 @@ function renderHistory() {
       state.draft = clone(tournament.data);
       if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
       if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
+      state.scheduleViewMode = "full";
       updateDraftInputs();
       renderPlayers();
       renderSchedule();
@@ -888,6 +917,10 @@ function validateMexicanoSetup() {
 
 async function generateMexicanoTournament() {
   if (!requireAdminAccess()) return;
+  if (state.draft.matches.length) {
+    alert("Turneringen er i gang. Brug 'Tilføj flere runder' i stedet for at generere på ny.");
+    return;
+  }
   state.draft.mode = courtTypeInput.value;
   state.draft.type = tournamentTypeInput.value;
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
@@ -895,6 +928,7 @@ async function generateMexicanoTournament() {
   state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   if (!validateMexicanoSetup()) return;
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
+  state.scheduleViewMode = "focus";
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -916,6 +950,7 @@ async function addRounds() {
     appendRoundsToDraft();
   }
 
+  state.scheduleViewMode = "focus";
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -1004,12 +1039,21 @@ tournamentTypeInput.addEventListener("change", updateRoundsHint);
 adminAccessBtn.addEventListener("click", () => {
   requireAdminAccess();
 });
+focusViewBtn?.addEventListener("click", () => {
+  state.scheduleViewMode = "focus";
+  renderSchedule();
+});
+fullViewBtn?.addEventListener("click", () => {
+  state.scheduleViewMode = "full";
+  renderSchedule();
+});
 
 (async function init() {
   await hydrateRemoteStorage();
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
   state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []);
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
+  if (!["full", "focus"].includes(state.scheduleViewMode)) state.scheduleViewMode = "full";
   syncDraftPlayersWithDatabase();
   if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
   if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
@@ -1021,7 +1065,6 @@ adminAccessBtn.addEventListener("click", () => {
   setActiveView("home");
   updateAdminAccessUi();
   setEditingEnabled(hasAdminAccess());
-  renderChangelogSummary();
   updateDraftInputs();
   renderSavedPlayers();
   renderPlayers();
