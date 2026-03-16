@@ -26,6 +26,11 @@ const tournamentTypeInput = document.getElementById("tournament-type");
 const generateBtn = document.getElementById("generate-btn");
 const addRoundBtn = document.getElementById("add-round-btn");
 const completeBtn = document.getElementById("complete-btn");
+const mobileHomeTab = document.getElementById("mobile-home-tab");
+const mobileCurrentTab = document.getElementById("mobile-current-tab");
+const mobileGenerateBtn = document.getElementById("mobile-generate-btn");
+const mobileAddRoundBtn = document.getElementById("mobile-add-round-btn");
+const mobileCompleteBtn = document.getElementById("mobile-complete-btn");
 
 const scheduleRoot = document.getElementById("schedule");
 const scheduleEmpty = document.getElementById("schedule-empty");
@@ -96,8 +101,21 @@ function loadFromStorage(key, fallback) {
 
 function setActiveView(view) {
   state.activeView = view;
-  setVisible(homeView, true);
-  setVisible(currentView, true);
+  const isMobile = window.matchMedia("(max-width: 680px)").matches;
+
+  if (isMobile) {
+    setVisible(homeView, view === "home");
+    setVisible(currentView, view === "current");
+  } else {
+    setVisible(homeView, true);
+    setVisible(currentView, true);
+  }
+
+  const isHome = state.activeView === "home";
+  mobileHomeTab.classList.toggle("primary", isHome);
+  mobileCurrentTab.classList.toggle("primary", !isHome);
+  mobileHomeTab.setAttribute("aria-pressed", String(isHome));
+  mobileCurrentTab.setAttribute("aria-pressed", String(!isHome));
 }
 
 function renderChangelogSummary() {
@@ -452,7 +470,7 @@ function renderSavedPlayers() {
       if (state.draft.players.includes(player.name)) return alert("Spilleren er allerede med i turneringen.");
       if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
       state.draft.players.push(player.name);
-      setActiveView("home");
+      setActiveView("current");
       renderPlayers();
       updateRoundsHint();
       await saveActiveTournament();
@@ -549,6 +567,7 @@ function renderStandings() {
   standingsRoot.innerHTML = "";
   setVisible(standingsEmpty, state.draft.matches.length === 0);
   completeBtn.disabled = state.draft.matches.length === 0;
+  mobileCompleteBtn.disabled = completeBtn.disabled;
   if (!state.draft.matches.length) return;
 
   const standings = getTournamentStandings(state.draft);
@@ -559,7 +578,10 @@ function renderStandings() {
       (row, i) => `<tr><td>${i === 0 ? "🏆 " : ""}${row.player}</td><td>${row.totalBallsWon}</td><td>${row.totalBallsAgainst}</td><td>${row.matches}</td><td>${row.wins}</td><td>${row.avgBallsPerMatch}</td></tr>`
     )
     .join("")}</tbody>`;
-  standingsRoot.appendChild(table);
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "stats-table-wrap";
+  tableWrap.appendChild(table);
+  standingsRoot.appendChild(tableWrap);
 }
 
 function getBaseAggregateStats() {
@@ -607,7 +629,10 @@ function renderAggregateStats() {
       (row, i) => `<tr><td>${i === 0 ? "⭐ " : ""}${row.player}</td><td>${row.tournamentWins}</td><td>${row.totalBallsWon}</td><td>${row.totalMatches}</td><td>${row.avgBallsPerMatch}</td></tr>`
     )
     .join("")}</tbody>`;
-  aggregateRoot.appendChild(table);
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "stats-table-wrap";
+  tableWrap.appendChild(table);
+  aggregateRoot.appendChild(tableWrap);
 }
 
 
@@ -643,7 +668,7 @@ function renderHistory() {
       renderPlayers();
       renderSchedule();
       renderStandings();
-      setActiveView("home");
+      setActiveView("current");
       await saveActiveTournament();
     });
 
@@ -677,7 +702,7 @@ async function generateMexicanoTournament() {
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
   renderSchedule();
   renderStandings();
-  setActiveView("home");
+  setActiveView("current");
   await saveActiveTournament();
 }
 
@@ -697,7 +722,7 @@ async function addRounds() {
 
   renderSchedule();
   renderStandings();
-  setActiveView("home");
+  setActiveView("current");
   await saveActiveTournament();
 }
 
@@ -773,11 +798,17 @@ playerForm.addEventListener("submit", async (event) => {
 generateBtn.addEventListener("click", generateMexicanoTournament);
 addRoundBtn.addEventListener("click", addRounds);
 completeBtn.addEventListener("click", completeTournament);
+mobileHomeTab.addEventListener("click", () => setActiveView("home"));
+mobileCurrentTab.addEventListener("click", () => setActiveView("current"));
+mobileGenerateBtn.addEventListener("click", generateMexicanoTournament);
+mobileAddRoundBtn.addEventListener("click", addRounds);
+mobileCompleteBtn.addEventListener("click", completeTournament);
 statsSortInput.addEventListener("change", renderAggregateStats);
 clearHistoryBtn.addEventListener("click", clearTournamentHistory);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
+window.addEventListener("resize", () => setActiveView(state.activeView));
 
 (function init() {
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
@@ -790,7 +821,7 @@ tournamentTypeInput.addEventListener("change", updateRoundsHint);
   setVisible(adminPlayerCard, false);
   setVisible(appCard, true);
 
-  setActiveView("home");
+  setActiveView("current");
   renderChangelogSummary();
   updateDraftInputs();
   renderSavedPlayers();
