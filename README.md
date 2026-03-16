@@ -1,76 +1,40 @@
 # Padel Mexicano (GitHub Pages + Supabase)
 
-Mobilvenlig webapp til Mexicano-format med 4 spillere:
+Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 
-- Supabase Auth (email/password)
-- Roller (`admin` / `user`)
-- Invitationer via SMTP (Supabase Auth invite)
-- Single-bane Mexicano (alle møder alle)
-- Double-bane Mexicano (3 runder for 4 spillere)
-- Samlet historik og spillerstatistik på tværs af turneringer
-- Aktiv turnering + historik gemmes i Supabase-database (`public.app_state`)
+## Funktioner
 
-## Funktionalitet i Mexicano-flowet
+- Ingen bruger-login i appen (alle kan åbne siden)
+- Admin-redigering låses op med PIN-kode i UI
+- Spillerdatabase (tilføj/slet spillere)
+- Single-bane og double-bane Mexicano
+- Klassisk eller rangliste-turnering
+- Aktiv turnering + historik gemmes i Supabase (`public.app_state`)
 
-- Vælg bane-type: `single` eller `double`.
-- Vælg antal bolde pr. runde (fx 24).
-- Ved resultatindtastning udfyldes modstanderens score automatisk (fx 14 => 10).
-- Vinder findes på flest samlede bolde vundet, når alle runder er spillet.
-- Historik viser turneringsvindere og samlet leaderboard med sortering.
-
-## 1) Konfigurer frontend
+## Konfiguration
 
 Fil: `supabase.config.js`
 
 ```js
 window.SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
 window.SUPABASE_ANON_KEY = "YOUR_PUBLISHABLE_KEY";
-window.PADEL_ADMIN_PIN = "SÆT_EN_HEMMELIG_KODE";
+window.PADEL_ADMIN_PIN = "9433"; // valgfri, men anbefalet
 ```
 
-`PADEL_ADMIN_PIN` bruges til at låse redigering op i UI, så kun administratoren kan ændre turneringer/resultater.
+Bemærk:
 
-## 2) Kør SQL migration i Supabase
+- `PADEL_ADMIN_PIN` bruges kun til at låse skriveadgang op i UI.
+- PIN kan være både tal og tekst, men sammenlignes som tekst.
+- Hvis PIN ikke er sat, kan alle redigere.
 
-Kør SQL fra (i rækkefølge):
+## Supabase migrationer
 
-- `supabase/migrations/20260313_init.sql`
-- `supabase/migrations/20260313_players_and_active_tournaments.sql`
-- `supabase/migrations/20260313_backfill_profiles.sql`
-- `supabase/migrations/20260316_public_app_state.sql`
+Kør SQL-filerne i denne rækkefølge:
 
-`20260313_backfill_profiles.sql` er vigtig, hvis der allerede var brugere i `auth.users` før migrationerne blev kørt. Den opretter manglende rækker i `public.profiles`.
-
-## 3) Deploy edge function til invitationer
-
-Function-fil:
-
-- `supabase/functions/invite-user/index.ts`
-
-Deploy:
-
-```bash
-supabase functions deploy invite-user
-```
-
-## 4) Auth + SMTP setup i Supabase
-
-I Supabase Dashboard:
-
-- **Authentication → Providers**: Aktivér Email/password.
-- **Authentication → URL configuration**: Sæt Site URL til din GitHub Pages URL.
-- **Authentication → SMTP settings**: Konfigurer SMTP til invite mails.
-
-## 5) Opret første admin (ingen hardcodede credentials i appen)
-
-1. Opret bruger i Supabase Authentication.
-2. Kør SQL:
-
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'din-admin@email.dk';
-```
+1. `supabase/migrations/20260313_init.sql`
+2. `supabase/migrations/20260313_players_and_active_tournaments.sql`
+3. `supabase/migrations/20260313_backfill_profiles.sql`
+4. `supabase/migrations/20260316_public_app_state.sql`
 
 ## Lokal kørsel
 
