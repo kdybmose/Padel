@@ -51,6 +51,7 @@ const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 
 const CHANGELOG_ENTRIES = [
+  { version: "v1.0.6", date: "16.03.2026", note: "Data gemmes nu i Supabase-database, så aktiv turnering og historik ikke forsvinder når en session lukker." },
   { version: "v1.0.5", date: "16.03.2026", note: "Fjernet localStorage. Data lever nu kun i den åbne session og deles ikke mellem enheder." },
   { version: "v1.0.4", date: "15.03.2026", note: "Rangliste genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
   { version: "v1.0.3", date: "13.03.2026", note: "Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage." },
@@ -65,7 +66,11 @@ const STORAGE_KEYS = {
   draft: "padel_active_draft"
 };
 
-const sessionStore = new Map();
+const REMOTE_STATE_ROW_ID = "public";
+const REMOTE_STATE_TABLE = "app_state";
+const remoteStorage = {};
+let persistTimer = null;
+let isPersisting = false;
 
 const state = {
   savedPlayers: [],
@@ -94,12 +99,79 @@ function getDisplayName(team) {
   return team.join(" / ");
 }
 
+function getSupabaseConfig() {
+  const url = window.SUPABASE_URL;
+  const anonKey = window.SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return null;
+  return { url, anonKey };
+}
+
+async function persistRemoteStorageNow() {
+  const config = getSupabaseConfig();
+  if (!config) return;
+
+  if (isPersisting) return;
+  isPersisting = true;
+
+  try {
+    await fetch(`${config.url}/rest/v1/${REMOTE_STATE_TABLE}?id=eq.${REMOTE_STATE_ROW_ID}`, {
+      method: "POST",
+      headers: {
+        apikey: config.anonKey,
+        Authorization: `Bearer ${config.anonKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({
+        id: REMOTE_STATE_ROW_ID,
+        data: remoteStorage
+      })
+    });
+  } catch (error) {
+    console.warn("Kunne ikke gemme data i Supabase:", error);
+  } finally {
+    isPersisting = false;
+  }
+}
+
+function queueRemotePersist() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    persistRemoteStorageNow();
+  }, 250);
+}
+
+async function hydrateRemoteStorage() {
+  const config = getSupabaseConfig();
+  if (!config) return;
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/${REMOTE_STATE_TABLE}?id=eq.${REMOTE_STATE_ROW_ID}&select=data`, {
+      headers: {
+        apikey: config.anonKey,
+        Authorization: `Bearer ${config.anonKey}`
+      }
+    });
+
+    if (!response.ok) return;
+    const rows = await response.json();
+    const payload = rows?.[0]?.data;
+    if (!payload || typeof payload !== "object") return;
+
+    Object.assign(remoteStorage, payload);
+  } catch (error) {
+    console.warn("Kunne ikke hente data fra Supabase:", error);
+  }
+}
+
 function saveToStorage(key, data) {
-  sessionStore.set(key, clone(data));
+  remoteStorage[key] = clone(data);
+  queueRemotePersist();
 }
 
 function loadFromStorage(key, fallback) {
-  return sessionStore.has(key) ? clone(sessionStore.get(key)) : fallback;
+  return key in remoteStorage ? clone(remoteStorage[key]) : fallback;
 }
 
 function setActiveView(view) {
@@ -824,7 +896,8 @@ courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
 
-(function init() {
+(async function init() {
+  await hydrateRemoteStorage();
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
   state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []);
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);

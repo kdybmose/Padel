@@ -8,6 +8,7 @@ Mobilvenlig webapp til Mexicano-format med 4 spillere:
 - Single-bane Mexicano (alle møder alle)
 - Double-bane Mexicano (3 runder for 4 spillere)
 - Samlet historik og spillerstatistik på tværs af turneringer
+- Aktiv turnering + historik gemmes i Supabase-database (`public.app_state`)
 
 ## Funktionalitet i Mexicano-flowet
 
@@ -33,6 +34,7 @@ Kør SQL fra (i rækkefølge):
 - `supabase/migrations/20260313_init.sql`
 - `supabase/migrations/20260313_players_and_active_tournaments.sql`
 - `supabase/migrations/20260313_backfill_profiles.sql`
+- `supabase/migrations/20260316_public_app_state.sql`
 
 `20260313_backfill_profiles.sql` er vigtig, hvis der allerede var brugere i `auth.users` før migrationerne blev kørt. Den opretter manglende rækker i `public.profiles`.
 
