@@ -4,6 +4,7 @@ const adminPlayerCard = document.getElementById("admin-player-card");
 
 const homeView = document.getElementById("home-view");
 const currentView = document.getElementById("current-view");
+const playersView = document.getElementById("players-view");
 const changelogVersion = document.getElementById("changelog-version");
 const changelogCount = document.getElementById("changelog-count");
 
@@ -14,8 +15,11 @@ const savedPlayerEmpty = document.getElementById("saved-player-empty");
 const savedPlayerSelect = document.getElementById("saved-player-select");
 
 const playerForm = document.getElementById("player-form");
-const playerInput = document.getElementById("player-input");
 const playerList = document.getElementById("player-list");
+
+const homeTab = document.getElementById("home-tab");
+const currentTab = document.getElementById("current-tab");
+const playersTab = document.getElementById("players-tab");
 
 const courtTypeInput = document.getElementById("court-type");
 const ballsPerRoundInput = document.getElementById("balls-per-round");
@@ -28,6 +32,7 @@ const addRoundBtn = document.getElementById("add-round-btn");
 const completeBtn = document.getElementById("complete-btn");
 const mobileHomeTab = document.getElementById("mobile-home-tab");
 const mobileCurrentTab = document.getElementById("mobile-current-tab");
+const mobilePlayersTab = document.getElementById("mobile-players-tab");
 const mobileGenerateBtn = document.getElementById("mobile-generate-btn");
 const mobileAddRoundBtn = document.getElementById("mobile-add-round-btn");
 const mobileCompleteBtn = document.getElementById("mobile-complete-btn");
@@ -101,21 +106,24 @@ function loadFromStorage(key, fallback) {
 
 function setActiveView(view) {
   state.activeView = view;
-  const isMobile = window.matchMedia("(max-width: 680px)").matches;
 
-  if (isMobile) {
-    setVisible(homeView, view === "home");
-    setVisible(currentView, view === "current");
-  } else {
-    setVisible(homeView, true);
-    setVisible(currentView, true);
-  }
+  setVisible(homeView, view === "home");
+  setVisible(currentView, view === "current");
+  setVisible(playersView, view === "players");
 
-  const isHome = state.activeView === "home";
-  mobileHomeTab.classList.toggle("primary", isHome);
-  mobileCurrentTab.classList.toggle("primary", !isHome);
-  mobileHomeTab.setAttribute("aria-pressed", String(isHome));
-  mobileCurrentTab.setAttribute("aria-pressed", String(!isHome));
+  const tabs = [
+    [homeTab, view === "home"],
+    [currentTab, view === "current"],
+    [playersTab, view === "players"],
+    [mobileHomeTab, view === "home"],
+    [mobileCurrentTab, view === "current"],
+    [mobilePlayersTab, view === "players"]
+  ];
+
+  tabs.forEach(([tab, isActive]) => {
+    tab.classList.toggle("primary", isActive);
+    tab.setAttribute("aria-pressed", String(isActive));
+  });
 }
 
 function renderChangelogSummary() {
@@ -424,9 +432,18 @@ function allResultsEntered() {
 }
 
 function renderSavedPlayerSelector() {
-  savedPlayerSelect.innerHTML = `<option value="">Vælg gemt spiller</option>${state.savedPlayers
+  savedPlayerSelect.innerHTML = `<option value="">Vælg spiller fra databasen</option>${state.savedPlayers
     .map((player) => `<option value="${player.name}">${player.name}</option>`)
     .join("")}`;
+}
+
+function syncDraftPlayersWithDatabase() {
+  const allowedPlayers = new Set(state.savedPlayers.map((player) => player.name));
+  const filteredPlayers = state.draft.players.filter((name) => allowedPlayers.has(name));
+  if (filteredPlayers.length !== state.draft.players.length) {
+    state.draft.players = filteredPlayers;
+    state.draft.matches = [];
+  }
 }
 
 function renderPlayers() {
@@ -481,8 +498,14 @@ function renderSavedPlayers() {
     deleteBtn.textContent = "Slet";
     deleteBtn.addEventListener("click", async () => {
       state.savedPlayers = state.savedPlayers.filter((saved) => saved.id !== player.id);
+      syncDraftPlayersWithDatabase();
       saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
       renderSavedPlayers();
+      renderPlayers();
+      updateRoundsHint();
+      renderSchedule();
+      renderStandings();
+      await saveActiveTournament();
     });
 
     actions.append(useBtn, deleteBtn);
@@ -774,21 +797,11 @@ savedPlayerForm.addEventListener("submit", (event) => {
 playerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const selectedName = savedPlayerSelect.value.trim();
-  const typedName = playerInput.value.trim();
-  const name = selectedName || typedName;
-  if (!name) return alert("Vælg en spiller eller skriv et navn.");
-  if (state.draft.players.includes(name)) return alert("Spilleren er allerede med i turneringen.");
+  if (!selectedName) return alert("Vælg en spiller fra databasen.");
+  if (state.draft.players.includes(selectedName)) return alert("Spilleren er allerede med i turneringen.");
   if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
 
-  state.draft.players.push(name);
-  if (typedName && !state.savedPlayers.some((player) => player.name.toLowerCase() === typedName.toLowerCase())) {
-    state.savedPlayers.push({ id: crypto.randomUUID(), name: typedName });
-    state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
-    saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
-    renderSavedPlayers();
-  }
-
-  playerInput.value = "";
+  state.draft.players.push(selectedName);
   savedPlayerSelect.value = "";
   renderPlayers();
   updateRoundsHint();
@@ -798,8 +811,12 @@ playerForm.addEventListener("submit", async (event) => {
 generateBtn.addEventListener("click", generateMexicanoTournament);
 addRoundBtn.addEventListener("click", addRounds);
 completeBtn.addEventListener("click", completeTournament);
+homeTab.addEventListener("click", () => setActiveView("home"));
+currentTab.addEventListener("click", () => setActiveView("current"));
+playersTab.addEventListener("click", () => setActiveView("players"));
 mobileHomeTab.addEventListener("click", () => setActiveView("home"));
 mobileCurrentTab.addEventListener("click", () => setActiveView("current"));
+mobilePlayersTab.addEventListener("click", () => setActiveView("players"));
 mobileGenerateBtn.addEventListener("click", generateMexicanoTournament);
 mobileAddRoundBtn.addEventListener("click", addRounds);
 mobileCompleteBtn.addEventListener("click", completeTournament);
@@ -808,12 +825,12 @@ clearHistoryBtn.addEventListener("click", clearTournamentHistory);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
-window.addEventListener("resize", () => setActiveView(state.activeView));
 
 (function init() {
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
   state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []);
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
+  syncDraftPlayersWithDatabase();
   if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
   if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
 
@@ -821,7 +838,7 @@ window.addEventListener("resize", () => setActiveView(state.activeView));
   setVisible(adminPlayerCard, false);
   setVisible(appCard, true);
 
-  setActiveView("current");
+  setActiveView("home");
   renderChangelogSummary();
   updateDraftInputs();
   renderSavedPlayers();

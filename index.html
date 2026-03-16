@@ -18,6 +18,13 @@
       <nav class="mobile-view-switch" aria-label="Mobil navigation">
         <button id="mobile-home-tab" type="button" class="primary">Historik</button>
         <button id="mobile-current-tab" type="button">Nuværende</button>
+        <button id="mobile-players-tab" type="button">Spillerdatabase</button>
+      </nav>
+
+      <nav class="view-switch card" aria-label="Navigation">
+        <button id="home-tab" type="button" class="primary">Historik</button>
+        <button id="current-tab" type="button">Nuværende turnering</button>
+        <button id="players-tab" type="button">Spillerdatabase</button>
       </nav>
 
       <section id="public-changelog" class="card">
@@ -50,16 +57,6 @@
 
         <section id="home-view">
           <section class="card">
-            <h2>Mine spillere</h2>
-            <form id="saved-player-form" class="row" method="post">
-              <input id="saved-player-input" type="text" placeholder="Nyt spillernavn" maxlength="30" required />
-              <button type="submit">Gem spiller</button>
-            </form>
-            <ul id="saved-player-list" class="simple-list"></ul>
-            <div id="saved-player-empty" class="muted">Ingen gemte spillere endnu.</div>
-          </section>
-
-          <section class="card">
             <h2>Historik og samlet oversigt</h2>
             <div class="row stacked-mobile">
               <label>
@@ -82,14 +79,26 @@
           </section>
         </section>
 
+        <section id="players-view" class="hidden">
+          <section class="card">
+            <h2>Spillerdatabase</h2>
+            <p class="muted">Tilføj og slet spillere her. Du kan kun vælge spillere til turneringer fra denne liste.</p>
+            <form id="saved-player-form" class="row" method="post">
+              <input id="saved-player-input" type="text" placeholder="Nyt spillernavn" maxlength="30" required />
+              <button type="submit">Tilføj spiller</button>
+            </form>
+            <ul id="saved-player-list" class="simple-list"></ul>
+            <div id="saved-player-empty" class="muted">Ingen spillere i databasen endnu.</div>
+          </section>
+        </section>
+
         <section id="current-view">
           <section class="card">
             <h2>Nuværende turnering</h2>
             <form id="player-form" class="row" method="post">
               <select id="saved-player-select">
-                <option value="">Vælg gemt spiller</option>
+                <option value="">Vælg spiller fra databasen</option>
               </select>
-              <input id="player-input" type="text" placeholder="Eller skriv nyt navn" maxlength="30" />
               <button type="submit">Tilføj spiller</button>
             </form>
             <ul id="player-list" class="player-list"></ul>
