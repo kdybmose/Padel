@@ -56,6 +56,16 @@ summary { cursor: pointer; color: var(--accent-2); }
 .stats-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .match label input { margin-top: 0.25rem; max-width: 140px; }
 
+.view-switch {
+  display: flex;
+  gap: 0.5rem;
+}
+.view-switch button:not(.primary) {
+  background: #eef4ff;
+  border-color: #c9dcff;
+  color: #1f4b99;
+}
+
 .mobile-view-switch,
 .mobile-action-bar { display: none; }
 
@@ -67,9 +77,10 @@ summary { cursor: pointer; color: var(--accent-2); }
   .simple-list li { flex-direction: column; align-items: start; }
   .view-tabs { flex-direction: column; }
   .actions input { min-width: 100%; }
+  .view-switch { display: none; }
   .mobile-view-switch {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.5rem;
     margin: 0 0 0.75rem;
     position: sticky;
