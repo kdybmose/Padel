@@ -51,6 +51,7 @@ const clearHistoryBtn = document.getElementById("clear-history-btn");
 
 
 const CHANGELOG_ENTRIES = [
+  { version: "v1.0.5", date: "16.03.2026", note: "Fjernet localStorage. Data lever nu kun i den åbne session og deles ikke mellem enheder." },
   { version: "v1.0.4", date: "15.03.2026", note: "Rangliste genererer nu flere kampe pr. batch, hvis der er flere kampe end baner." },
   { version: "v1.0.3", date: "13.03.2026", note: "Fjernet login-flow midlertidigt. Appen kører nu lokalt uden login, og data gemmes i browserens localStorage." },
   { version: "v1.0.2", date: "13.03.2026", note: "Formularer bruger nu POST som fallback, så siden ikke ender på en tom ?-URL ved submit uden aktiv JavaScript." },
@@ -63,6 +64,8 @@ const STORAGE_KEYS = {
   tournaments: "padel_tournaments",
   draft: "padel_active_draft"
 };
+
+const sessionStore = new Map();
 
 const state = {
   savedPlayers: [],
@@ -92,16 +95,11 @@ function getDisplayName(team) {
 }
 
 function saveToStorage(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
+  sessionStore.set(key, clone(data));
 }
 
 function loadFromStorage(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
+  return sessionStore.has(key) ? clone(sessionStore.get(key)) : fallback;
 }
 
 function setActiveView(view) {
