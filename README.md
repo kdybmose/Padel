@@ -4,9 +4,9 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 
 ## Funktioner
 
-- Ingen bruger-login i appen (alle kan åbne siden)
-- Admin-redigering låses op med PIN-kode i UI
-- Spillerdatabase (tilføj/slet spillere)
+- UI uden bruger-login (lokal admin-PIN i klienten)
+- Database-regler for invitation-baseret adgang via Supabase Auth
+- Spillerdatabase
 - Single-bane og double-bane Mexicano
 - Klassisk eller rangliste-turnering
 - Aktiv turnering + historik gemmes i Supabase (`public.app_state`)
@@ -23,9 +23,8 @@ window.PADEL_ADMIN_PIN = "9433"; // valgfri, men anbefalet
 
 Bemærk:
 
-- `PADEL_ADMIN_PIN` bruges kun til at låse skriveadgang op i UI.
-- PIN kan være både tal og tekst, men sammenlignes som tekst.
-- Hvis PIN ikke er sat, kan alle redigere.
+- UI kan fortsat bruge `PADEL_ADMIN_PIN` til lokal lås af redigering.
+- På databaseniveau håndhæves invitationer (`public.invitations`) og admin-mail `dybmose@hotmail.com` af migrationer.
 
 ## Supabase migrationer
 
@@ -35,6 +34,7 @@ Kør SQL-filerne i denne rækkefølge:
 2. `supabase/migrations/20260313_players_and_active_tournaments.sql`
 3. `supabase/migrations/20260313_backfill_profiles.sql`
 4. `supabase/migrations/20260316_public_app_state.sql`
+5. `supabase/migrations/20260317_invite_admin_and_player_sync.sql`
 
 ## Lokal kørsel
 
