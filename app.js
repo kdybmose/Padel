@@ -43,6 +43,8 @@ const standingsEmpty = document.getElementById("standings-empty");
 const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
+const publicSignupForm = document.getElementById("public-signup-form");
+const publicSignupNameInput = document.getElementById("public-signup-name");
 const adminAccessBtn = document.getElementById("admin-access-btn");
 const adminAccessStatus = document.getElementById("admin-access-status");
 
@@ -1102,6 +1104,22 @@ function renderSavedPlayers() {
   renderSavedPlayerSelector();
 }
 
+function registerPlayerInDatabase(name) {
+  const trimmedName = String(name || "").trim();
+  if (!trimmedName) return { ok: false, reason: "empty" };
+
+  if (state.savedPlayers.some((player) => player.name.toLowerCase() === trimmedName.toLowerCase())) {
+    return { ok: false, reason: "exists" };
+  }
+
+  state.savedPlayers.push({ id: crypto.randomUUID(), name: trimmedName, stats: getDefaultPlayerStats() });
+  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
+  renderSavedPlayers();
+  renderHome();
+  return { ok: true };
+}
+
 function renderSchedule() {
   setEditingEnabled(hasAdminAccess());
   updateRoundActionButtons();
@@ -1361,18 +1379,25 @@ async function completeTournament() {
 savedPlayerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!requireAdminAccess()) return;
-  const name = savedPlayerInput.value.trim();
-  if (!name) return;
-  if (state.savedPlayers.some((player) => player.name.toLowerCase() === name.toLowerCase())) {
+  const result = registerPlayerInDatabase(savedPlayerInput.value);
+  if (result.reason === "empty") return;
+  if (result.reason === "exists") {
     alert("Spilleren findes allerede i din liste.");
     return;
   }
-  state.savedPlayers.push({ id: crypto.randomUUID(), name, stats: getDefaultPlayerStats() });
-  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
-  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
   savedPlayerForm.reset();
-  renderSavedPlayers();
-  renderHome();
+});
+
+publicSignupForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const result = registerPlayerInDatabase(publicSignupNameInput?.value);
+  if (result.reason === "empty") return;
+  if (result.reason === "exists") {
+    alert("Spilleren findes allerede i databasen.");
+    return;
+  }
+  publicSignupForm.reset();
+  alert("Tak for din registrering! Spilleren er oprettet i databasen.");
 });
 
 playerForm.addEventListener("submit", async (event) => {
