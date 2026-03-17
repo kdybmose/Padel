@@ -34,8 +34,6 @@ const mobilePlayersTab = document.getElementById("mobile-players-tab");
 const mobileGenerateBtn = document.getElementById("mobile-generate-btn");
 const mobileAddRoundBtn = document.getElementById("mobile-add-round-btn");
 const mobileCompleteBtn = document.getElementById("mobile-complete-btn");
-const focusViewBtn = document.getElementById("focus-view-btn");
-const fullViewBtn = document.getElementById("full-view-btn");
 
 const scheduleRoot = document.getElementById("schedule");
 const scheduleEmpty = document.getElementById("schedule-empty");
@@ -71,7 +69,6 @@ const state = {
   tournaments: [],
   activeView: "home",
   isAdminUnlocked: false,
-  scheduleViewMode: "full",
   draft: {
     players: [],
     playerSnapshot: {},
@@ -291,10 +288,6 @@ function isDraftLockedForPlayerChanges() {
   return state.draft.matches.length > 0;
 }
 
-function getPreferredScheduleMode() {
-  return window.matchMedia("(max-width: 768px)").matches ? "focus" : "full";
-}
-
 function ensurePlayerIds(players) {
   const byName = new Map(state.savedPlayers.map((player) => [player.name.toLowerCase(), player.id]));
   return players.map((player) => {
@@ -380,7 +373,6 @@ async function saveActiveTournament() {
 
 async function clearActiveTournament() {
   state.draft = { players: [], playerSnapshot: {}, mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
-  state.scheduleViewMode = "full";
   updateDraftInputs();
   saveToStorage(STORAGE_KEYS.draft, state.draft);
 }
@@ -509,9 +501,24 @@ function scheduleMatches(rawMatches, courts, startingRound = 1) {
 }
 
 
-function buildNearestOpponentRounds(players, standingsRows, mode, courts, startingRound) {
+function getPlayedMatchesCountByPlayer(players, matches = []) {
+  const counts = new Map(players.map((playerId) => [playerId, 0]));
+  matches.forEach((match) => {
+    [...(match.teamA || []), ...(match.teamB || [])].forEach((playerId) => {
+      if (!counts.has(playerId)) return;
+      counts.set(playerId, (counts.get(playerId) || 0) + 1);
+    });
+  });
+  return counts;
+}
+
+function buildNearestOpponentRounds(players, standingsRows, mode, courts, startingRound, playedMatchesByPlayer = new Map()) {
   const rankByPlayer = new Map(standingsRows.map((row, index) => [row.playerId, index]));
   const sortedPlayers = [...players].sort((a, b) => {
+    const playedA = playedMatchesByPlayer.get(a) || 0;
+    const playedB = playedMatchesByPlayer.get(b) || 0;
+    if (playedA !== playedB) return playedA - playedB;
+
     const indexA = rankByPlayer.get(a);
     const indexB = rankByPlayer.get(b);
     if (indexA === undefined && indexB === undefined) return getPlayerName(a).localeCompare(getPlayerName(b), "da");
@@ -521,21 +528,26 @@ function buildNearestOpponentRounds(players, standingsRows, mode, courts, starti
     return getPlayerName(a).localeCompare(getPlayerName(b), "da");
   });
 
+  const playersPerMatch = mode === "double" ? 4 : 2;
+  const perRound = Math.max(1, courts);
+  const maxPlayersInRound = perRound * playersPerMatch;
+  const activePlayersCount = Math.floor(Math.min(sortedPlayers.length, maxPlayersInRound) / playersPerMatch) * playersPerMatch;
+  const activePlayers = sortedPlayers.slice(0, activePlayersCount);
+
   const roundMatches = [];
   if (mode === "single") {
-    for (let i = 0; i + 1 < sortedPlayers.length; i += 2) {
-      roundMatches.push({ teamA: [sortedPlayers[i]], teamB: [sortedPlayers[i + 1]] });
+    for (let i = 0; i + 1 < activePlayers.length; i += 2) {
+      roundMatches.push({ teamA: [activePlayers[i]], teamB: [activePlayers[i + 1]] });
     }
   } else {
-    for (let i = 0; i + 3 < sortedPlayers.length; i += 4) {
+    for (let i = 0; i + 3 < activePlayers.length; i += 4) {
       roundMatches.push({
-        teamA: [sortedPlayers[i], sortedPlayers[i + 1]],
-        teamB: [sortedPlayers[i + 2], sortedPlayers[i + 3]]
+        teamA: [activePlayers[i], activePlayers[i + 1]],
+        teamB: [activePlayers[i + 2], activePlayers[i + 3]]
       });
     }
   }
 
-  const perRound = Math.max(1, courts);
   return roundMatches.map((match, index) => ({
     ...match,
     round: startingRound + Math.floor(index / perRound),
@@ -573,12 +585,13 @@ function getAggregateStandingsForPlayers(players) {
 }
 
 function buildNearestDraftMatches(players, mode, courts, existingMatches = []) {
-  const hasCurrentResults = existingMatches.some((match) => Number.isInteger(match.scoreA) && Number.isInteger(match.scoreB));
+  const hasCurrentResults = existingMatches.some((match) => isMatchScored(match));
   const standings = hasCurrentResults
     ? getTournamentStandings({ players, matches: existingMatches, playerSnapshot: buildPlayerSnapshot(players) })
     : getAggregateStandingsForPlayers(players);
   const firstRound = Math.max(1, existingMatches.reduce((max, m) => Math.max(max, m.round || 0), 0) + 1);
-  return buildNearestOpponentRounds(players, standings, mode, courts, firstRound);
+  const playedMatchesByPlayer = getPlayedMatchesCountByPlayer(players, existingMatches);
+  return buildNearestOpponentRounds(players, standings, mode, courts, firstRound, playedMatchesByPlayer);
 }
 function buildRoundPackage(players, mode, courts, startingRound = 1) {
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
@@ -626,6 +639,10 @@ function appendRoundsToDraft() {
   state.draft.matches.push(...extraMatches);
 }
 
+function isMatchScored(match) {
+  return Number.isInteger(match?.scoreA) && Number.isInteger(match?.scoreB);
+}
+
 function getTournamentStandings(tournament) {
   const snapshot = tournament.playerSnapshot || {};
   const map = new Map();
@@ -634,7 +651,7 @@ function getTournamentStandings(tournament) {
   );
 
   tournament.matches.forEach((match) => {
-    if (match.scoreA === null || match.scoreB === null) return;
+    if (!isMatchScored(match)) return;
     match.teamA.forEach((playerId) => {
       const row = map.get(playerId);
       if (!row) return;
@@ -669,7 +686,7 @@ function getTournamentStandings(tournament) {
 }
 
 function allResultsEntered() {
-  return state.draft.matches.length > 0 && state.draft.matches.every((m) => Number.isInteger(m.scoreA) && Number.isInteger(m.scoreB));
+  return state.draft.matches.length > 0 && state.draft.matches.every(isMatchScored);
 }
 
 function getPlannedMatchesByPlayer(tournament) {
@@ -822,42 +839,13 @@ function renderSavedPlayers() {
   renderSavedPlayerSelector();
 }
 
-function getCurrentMatchIndex() {
-  if (!state.draft.matches.length) return -1;
-  const firstIncomplete = state.draft.matches.findIndex((match) => !Number.isInteger(match.scoreA) || !Number.isInteger(match.scoreB));
-  if (firstIncomplete >= 0) return firstIncomplete;
-  return state.draft.matches.length - 1;
-}
-
-function getVisibleMatches() {
-  if (state.scheduleViewMode === "full") return state.draft.matches;
-  const currentIndex = getCurrentMatchIndex();
-  if (currentIndex < 0) return [];
-  return state.draft.matches.filter((_, index) => index === currentIndex || index === currentIndex + 1);
-}
-
-function updateScheduleViewControls() {
-  const hasMatches = state.draft.matches.length > 0;
-  if (focusViewBtn) {
-    focusViewBtn.disabled = !hasMatches || state.scheduleViewMode === "focus";
-    focusViewBtn.classList.toggle("primary", state.scheduleViewMode === "focus");
-  }
-  if (fullViewBtn) {
-    fullViewBtn.disabled = !hasMatches || state.scheduleViewMode === "full";
-    fullViewBtn.classList.toggle("primary", state.scheduleViewMode === "full");
-  }
-}
-
 function renderSchedule() {
   setEditingEnabled(hasAdminAccess());
   updateRoundActionButtons();
   scheduleRoot.innerHTML = "";
   setVisible(scheduleEmpty, state.draft.matches.length === 0);
-  updateScheduleViewControls();
 
-  const visibleMatches = getVisibleMatches();
-
-  visibleMatches.forEach((match) => {
+  state.draft.matches.forEach((match) => {
     const row = document.createElement("article");
     row.className = "match";
     const title = document.createElement("div");
@@ -1060,7 +1048,6 @@ async function generateMexicanoTournament() {
   state.draft.playerSnapshot = { ...(state.draft.playerSnapshot || {}), ...buildPlayerSnapshot(state.draft.players) };
   if (!validateMexicanoSetup()) return;
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
-  state.scheduleViewMode = getPreferredScheduleMode();
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -1088,7 +1075,6 @@ async function addRounds() {
     appendRoundsToDraft();
   }
 
-  state.scheduleViewMode = getPreferredScheduleMode();
   renderSchedule();
   renderStandings();
   setActiveView("current");
@@ -1111,10 +1097,10 @@ async function completeTournament() {
       .sort((a, b) => b.matches - a.matches || a.playerName.localeCompare(b.playerName, "da"))
       .map((entry) => `${entry.playerName}: ${entry.matches}`)
       .join("\n");
-    const shouldCompleteUneven = confirm(
-      `Spillerne har ikke spillet lige mange kampe (${unevenParticipation.minMatches}-${unevenParticipation.maxMatches}).\n\n${details}\n\nVil du afslutte turneringen alligevel?`
+    alert(
+      `Spillerne skal spille lige mange kampe, før turneringen kan afsluttes (${unevenParticipation.minMatches}-${unevenParticipation.maxMatches}).\n\n${details}`
     );
-    if (!shouldCompleteUneven) return;
+    return;
   }
 
   const payload = {
@@ -1192,14 +1178,6 @@ tournamentTypeInput.addEventListener("change", updateRoundsHint);
 adminAccessBtn.addEventListener("click", () => {
   requireAdminAccess();
 });
-focusViewBtn?.addEventListener("click", () => {
-  state.scheduleViewMode = "focus";
-  renderSchedule();
-});
-fullViewBtn?.addEventListener("click", () => {
-  state.scheduleViewMode = "full";
-  renderSchedule();
-});
 
 (async function init() {
   await hydrateRemoteStorage();
@@ -1224,7 +1202,6 @@ fullViewBtn?.addEventListener("click", () => {
   }));
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
   state.draft = migrateTournamentData({ ...state.draft, players: state.draft.players || [], matches: state.draft.matches || [] });
-  if (!["full", "focus"].includes(state.scheduleViewMode)) state.scheduleViewMode = "full";
   syncDraftPlayersWithDatabase();
   if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
   if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
