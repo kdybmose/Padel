@@ -512,9 +512,201 @@ function getPlayedMatchesCountByPlayer(players, matches = []) {
   return counts;
 }
 
-function buildNearestOpponentRounds(players, standingsRows, mode, courts, startingRound, playedMatchesByPlayer = new Map()) {
+
+function getOpponentCountsByPlayer(players, matches = []) {
+  const opponentCounts = new Map(players.map((playerId) => [playerId, new Map()]));
+
+  function incrementOpponent(playerId, opponentId) {
+    if (!opponentCounts.has(playerId)) opponentCounts.set(playerId, new Map());
+    const row = opponentCounts.get(playerId);
+    row.set(opponentId, (row.get(opponentId) || 0) + 1);
+  }
+
+  matches.forEach((match) => {
+    const teamA = match.teamA || [];
+    const teamB = match.teamB || [];
+    teamA.forEach((playerA) => {
+      teamB.forEach((playerB) => {
+        incrementOpponent(playerA, playerB);
+        incrementOpponent(playerB, playerA);
+      });
+    });
+  });
+
+  return opponentCounts;
+}
+
+
+function getTeammateCountsByPlayer(players, matches = []) {
+  const teammateCounts = new Map(players.map((playerId) => [playerId, new Map()]));
+
+  function incrementTeammate(playerId, teammateId) {
+    if (!teammateCounts.has(playerId)) teammateCounts.set(playerId, new Map());
+    const row = teammateCounts.get(playerId);
+    row.set(teammateId, (row.get(teammateId) || 0) + 1);
+  }
+
+  matches.forEach((match) => {
+    const teams = [match.teamA || [], match.teamB || []];
+    teams.forEach((team) => {
+      if (team.length < 2) return;
+      for (let i = 0; i < team.length; i += 1) {
+        for (let j = i + 1; j < team.length; j += 1) {
+          incrementTeammate(team[i], team[j]);
+          incrementTeammate(team[j], team[i]);
+        }
+      }
+    });
+  });
+
+  return teammateCounts;
+}
+
+function buildNearestDoublesRoundMatches(activePlayers, rankByPlayer, opponentCountsByPlayer, teammateCountsByPlayer) {
+  const unassigned = [...activePlayers];
+  const matches = [];
+
+  function getPairCount(mapByPlayer, playerA, playerB) {
+    return mapByPlayer.get(playerA)?.get(playerB) || 0;
+  }
+
+  function rankDistance(playerA, playerB) {
+    const rankA = rankByPlayer.get(playerA) ?? Number.MAX_SAFE_INTEGER;
+    const rankB = rankByPlayer.get(playerB) ?? Number.MAX_SAFE_INTEGER;
+    return Math.abs(rankA - rankB);
+  }
+
+  function updatePairCount(mapByPlayer, playerA, playerB) {
+    const rowA = mapByPlayer.get(playerA) || new Map();
+    const rowB = mapByPlayer.get(playerB) || new Map();
+    rowA.set(playerB, (rowA.get(playerB) || 0) + 1);
+    rowB.set(playerA, (rowB.get(playerA) || 0) + 1);
+    mapByPlayer.set(playerA, rowA);
+    mapByPlayer.set(playerB, rowB);
+  }
+
+  while (unassigned.length >= 4) {
+    const first = unassigned.shift();
+
+    let teammateIndex = 0;
+    let teammateScore = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < unassigned.length; i += 1) {
+      const candidate = unassigned[i];
+      const score = getPairCount(teammateCountsByPlayer, first, candidate) * 1000 + rankDistance(first, candidate);
+      if (score < teammateScore) {
+        teammateScore = score;
+        teammateIndex = i;
+      }
+    }
+
+    const [second] = unassigned.splice(teammateIndex, 1);
+    const teamA = [first, second];
+
+    let bestI = 0;
+    let bestJ = 1;
+    let bestScore = Number.MAX_SAFE_INTEGER;
+
+    for (let i = 0; i < unassigned.length; i += 1) {
+      for (let j = i + 1; j < unassigned.length; j += 1) {
+        const third = unassigned[i];
+        const fourth = unassigned[j];
+        const teammateRepeats = getPairCount(teammateCountsByPlayer, third, fourth);
+        const opponentRepeats =
+          getPairCount(opponentCountsByPlayer, first, third) +
+          getPairCount(opponentCountsByPlayer, first, fourth) +
+          getPairCount(opponentCountsByPlayer, second, third) +
+          getPairCount(opponentCountsByPlayer, second, fourth);
+        const teamRankDistance =
+          rankDistance(first, third) +
+          rankDistance(first, fourth) +
+          rankDistance(second, third) +
+          rankDistance(second, fourth);
+        const score = teammateRepeats * 10000 + opponentRepeats * 100 + teamRankDistance;
+        if (score < bestScore) {
+          bestScore = score;
+          bestI = i;
+          bestJ = j;
+        }
+      }
+    }
+
+    const idxA = Math.max(bestI, bestJ);
+    const idxB = Math.min(bestI, bestJ);
+    const [playerHigh] = unassigned.splice(idxA, 1);
+    const [playerLow] = unassigned.splice(idxB, 1);
+    const teamB = [playerLow, playerHigh];
+
+    matches.push({ teamA, teamB });
+
+    updatePairCount(teammateCountsByPlayer, teamA[0], teamA[1]);
+    updatePairCount(teammateCountsByPlayer, teamB[0], teamB[1]);
+
+    teamA.forEach((playerA) => teamB.forEach((playerB) => updatePairCount(opponentCountsByPlayer, playerA, playerB)));
+  }
+
+  return matches;
+}
+
+function buildNearestSinglesRoundMatches(activePlayers, rankByPlayer, opponentCountsByPlayer) {
+  const unpaired = [...activePlayers];
+  const matches = [];
+
+  function getOpponentCount(playerA, playerB) {
+    return opponentCountsByPlayer.get(playerA)?.get(playerB) || 0;
+  }
+
+  function rankDistance(playerA, playerB) {
+    const rankA = rankByPlayer.get(playerA) ?? Number.MAX_SAFE_INTEGER;
+    const rankB = rankByPlayer.get(playerB) ?? Number.MAX_SAFE_INTEGER;
+    return Math.abs(rankA - rankB);
+  }
+
+  while (unpaired.length >= 2) {
+    const playerA = unpaired.shift();
+    let bestIndex = 0;
+    let bestScore = Number.MAX_SAFE_INTEGER;
+
+    for (let i = 0; i < unpaired.length; i += 1) {
+      const playerB = unpaired[i];
+      const repeats = getOpponentCount(playerA, playerB);
+      const score = repeats * 1000 + rankDistance(playerA, playerB);
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    const [playerB] = unpaired.splice(bestIndex, 1);
+    matches.push({ teamA: [playerA], teamB: [playerB] });
+
+    const rowA = opponentCountsByPlayer.get(playerA) || new Map();
+    const rowB = opponentCountsByPlayer.get(playerB) || new Map();
+    rowA.set(playerB, (rowA.get(playerB) || 0) + 1);
+    rowB.set(playerA, (rowB.get(playerA) || 0) + 1);
+    opponentCountsByPlayer.set(playerA, rowA);
+    opponentCountsByPlayer.set(playerB, rowB);
+  }
+
+  return matches;
+}
+
+function buildNearestOpponentRounds(
+  players,
+  standingsRows,
+  mode,
+  courts,
+  startingRound,
+  playedMatchesByPlayer = new Map(),
+  opponentCountsByPlayer = new Map(),
+  teammateCountsByPlayer = new Map()
+) {
   const rankByPlayer = new Map(standingsRows.map((row, index) => [row.playerId, index]));
-  const sortedPlayers = [...players].sort((a, b) => {
+  const packagePlayedByPlayer = new Map(players.map((playerId) => [playerId, 0]));
+  const sortPlayers = (a, b) => {
+    const packagePlayedA = packagePlayedByPlayer.get(a) || 0;
+    const packagePlayedB = packagePlayedByPlayer.get(b) || 0;
+    if (packagePlayedA !== packagePlayedB) return packagePlayedA - packagePlayedB;
+
     const playedA = playedMatchesByPlayer.get(a) || 0;
     const playedB = playedMatchesByPlayer.get(b) || 0;
     if (playedA !== playedB) return playedA - playedB;
@@ -526,26 +718,35 @@ function buildNearestOpponentRounds(players, standingsRows, mode, courts, starti
     if (indexB === undefined) return -1;
     if (indexA !== indexB) return indexA - indexB;
     return getPlayerName(a).localeCompare(getPlayerName(b), "da");
-  });
+  };
 
   const playersPerMatch = mode === "double" ? 4 : 2;
+  if (players.length < playersPerMatch) return [];
+
   const perRound = Math.max(1, courts);
-  const maxPlayersInRound = perRound * playersPerMatch;
-  const activePlayersCount = Math.floor(Math.min(sortedPlayers.length, maxPlayersInRound) / playersPerMatch) * playersPerMatch;
-  const activePlayers = sortedPlayers.slice(0, activePlayersCount);
+  const maxPlayersInRound = Math.min(players.length, perRound * playersPerMatch);
+  const activePlayersCount = Math.floor(maxPlayersInRound / playersPerMatch) * playersPerMatch;
+  if (!activePlayersCount) return [];
 
   const roundMatches = [];
-  if (mode === "single") {
-    for (let i = 0; i + 1 < activePlayers.length; i += 2) {
-      roundMatches.push({ teamA: [activePlayers[i]], teamB: [activePlayers[i + 1]] });
+  const requiredRounds = Math.max(1, Math.ceil(players.length / activePlayersCount));
+  let roundsCreated = 0;
+
+  while (roundsCreated < requiredRounds) {
+    const sortedPlayers = [...players].sort(sortPlayers);
+    const activePlayers = sortedPlayers.slice(0, activePlayersCount);
+
+    if (mode === "single") {
+      roundMatches.push(...buildNearestSinglesRoundMatches(activePlayers, rankByPlayer, opponentCountsByPlayer));
+    } else {
+      roundMatches.push(...buildNearestDoublesRoundMatches(activePlayers, rankByPlayer, opponentCountsByPlayer, teammateCountsByPlayer));
     }
-  } else {
-    for (let i = 0; i + 3 < activePlayers.length; i += 4) {
-      roundMatches.push({
-        teamA: [activePlayers[i], activePlayers[i + 1]],
-        teamB: [activePlayers[i + 2], activePlayers[i + 3]]
-      });
-    }
+
+    activePlayers.forEach((playerId) => {
+      packagePlayedByPlayer.set(playerId, (packagePlayedByPlayer.get(playerId) || 0) + 1);
+    });
+
+    roundsCreated += 1;
   }
 
   return roundMatches.map((match, index) => ({
@@ -591,7 +792,18 @@ function buildNearestDraftMatches(players, mode, courts, existingMatches = []) {
     : getAggregateStandingsForPlayers(players);
   const firstRound = Math.max(1, existingMatches.reduce((max, m) => Math.max(max, m.round || 0), 0) + 1);
   const playedMatchesByPlayer = getPlayedMatchesCountByPlayer(players, existingMatches);
-  return buildNearestOpponentRounds(players, standings, mode, courts, firstRound, playedMatchesByPlayer);
+  const opponentCountsByPlayer = getOpponentCountsByPlayer(players, existingMatches);
+  const teammateCountsByPlayer = getTeammateCountsByPlayer(players, existingMatches);
+  return buildNearestOpponentRounds(
+    players,
+    standings,
+    mode,
+    courts,
+    firstRound,
+    playedMatchesByPlayer,
+    opponentCountsByPlayer,
+    teammateCountsByPlayer
+  );
 }
 function buildRoundPackage(players, mode, courts, startingRound = 1) {
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
