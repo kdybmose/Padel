@@ -8,14 +8,35 @@
   </head>
   <body>
     <main class="container">
+      <section id="auth-card" class="card" aria-label="Log ind eller registrér">
+        <h2>Log ind</h2>
+        <p class="muted">Log ind med din bruger. Er du ny spiller, så registrér dig først.</p>
+        <form id="login-form" class="row stacked-mobile" method="post">
+          <input id="auth-email" type="email" placeholder="E-mail" required />
+          <input id="auth-password" type="password" placeholder="Adgangskode" required />
+          <button type="submit" class="primary">Log ind</button>
+        </form>
+        <button id="forgot-password-btn" type="button">Glemt adgangskode</button>
+
+        <h3>Ny spiller? Registrér dig</h3>
+        <form id="register-form" class="row stacked-mobile" method="post">
+          <input id="register-name" type="text" placeholder="Fulde navn" maxlength="60" required />
+          <input id="register-email" type="email" placeholder="E-mail" required />
+          <input id="register-password" type="password" placeholder="Vælg adgangskode" minlength="6" required />
+          <button type="submit">Registrér bruger</button>
+        </form>
+        <p id="auth-status" class="muted"></p>
+      </section>
+
       <header class="topbar">
         <div>
           <h1>🎾 Padel Mexicano</h1>
-          <p class="muted">Mexicano turneringer uden login (data gemmes i database).</p>
+          <p class="muted">Mexicano turneringer med login (data gemmes i database).</p>
         </div>
+        <button id="logout-btn" type="button" class="hidden">Log ud</button>
       </header>
 
-      <section class="card" aria-label="Admin-adgang">
+      <section id="admin-access-card" class="card" aria-label="Admin-adgang">
         <div class="row stacked-mobile">
           <p id="admin-access-status" class="muted">Skriveadgang låst (kun læsning).</p>
           <button id="admin-access-btn" type="button">Lås op som admin</button>
@@ -168,6 +189,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase.config.js"></script>
     <script src="app.js" defer></script>
   </body>

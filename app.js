@@ -1,4 +1,16 @@
 const appCard = document.getElementById("app-card");
+const authCard = document.getElementById("auth-card");
+const authStatus = document.getElementById("auth-status");
+const loginForm = document.getElementById("login-form");
+const registerForm = document.getElementById("register-form");
+const authEmailInput = document.getElementById("auth-email");
+const authPasswordInput = document.getElementById("auth-password");
+const registerNameInput = document.getElementById("register-name");
+const registerEmailInput = document.getElementById("register-email");
+const registerPasswordInput = document.getElementById("register-password");
+const forgotPasswordBtn = document.getElementById("forgot-password-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const adminAccessCard = document.getElementById("admin-access-card");
 const adminCard = document.getElementById("admin-card");
 const adminPlayerCard = document.getElementById("admin-player-card");
 
@@ -65,6 +77,8 @@ let isPersisting = false;
 const state = {
   savedPlayers: [],
   activeView: "home",
+  currentUser: null,
+  isAdminUser: false,
   isAdminUnlocked: false,
   draft: {
     players: [],
@@ -118,6 +132,31 @@ function getSupabaseConfig() {
   if (!url || !anonKey) return null;
   return { url, anonKey };
 }
+function getSupabaseClient() {
+  const config = getSupabaseConfig();
+  if (!config || !window.supabase?.createClient) return null;
+  return window.supabase.createClient(config.url, config.anonKey);
+}
+
+function getStorageScope() {
+  if (!state.currentUser?.id) return "anon";
+  return `user_${state.currentUser.id}`;
+}
+
+function getScopedStorageKey(key) {
+  return `${getStorageScope()}_${key}`;
+}
+
+function isKristianAdmin(email) {
+  return String(email || "").trim().toLowerCase() === "dybmose@hotmail.com";
+}
+
+function setAuthStatus(message, isError = false) {
+  if (!authStatus) return;
+  authStatus.textContent = message || "";
+  authStatus.style.color = isError ? "#d13a3a" : "";
+}
+
 
 async function persistRemoteStorageNow() {
   const config = getSupabaseConfig();
@@ -202,14 +241,16 @@ function readLocalStorage(key) {
 }
 
 function saveToStorage(key, data) {
-  remoteStorage[key] = clone(data);
-  writeLocalStorage(key, data);
+  const scopedKey = getScopedStorageKey(key);
+  remoteStorage[scopedKey] = clone(data);
+  writeLocalStorage(scopedKey, data);
   queueRemotePersist();
 }
 
 function loadFromStorage(key, fallback) {
-  if (key in remoteStorage) return clone(remoteStorage[key]);
-  const localData = readLocalStorage(key);
+  const scopedKey = getScopedStorageKey(key);
+  if (scopedKey in remoteStorage) return clone(remoteStorage[scopedKey]);
+  const localData = readLocalStorage(scopedKey);
   if (localData !== undefined) return clone(localData);
   return fallback;
 }
@@ -224,51 +265,28 @@ function isAdminPinConfigured() {
 }
 
 function hasAdminAccess() {
-  return !isAdminPinConfigured() || state.isAdminUnlocked;
+  return state.isAdminUser;
 }
 
 function updateAdminAccessUi() {
   if (!adminAccessStatus || !adminAccessBtn) return;
 
-  if (!isAdminPinConfigured()) {
-    adminAccessStatus.textContent = "Admin-PIN er ikke sat. Alle kan redigere.";
-    adminAccessBtn.textContent = "PIN ikke konfigureret";
+  if (state.isAdminUser) {
+    adminAccessStatus.textContent = "Admin-adgang aktiv (Kristian Dybmose).";
+    adminAccessBtn.textContent = "Admin";
     adminAccessBtn.disabled = true;
     return;
   }
 
-  if (state.isAdminUnlocked) {
-    adminAccessStatus.textContent = "Admin-adgang aktiv. Redigering er tilladt.";
-    adminAccessBtn.textContent = "Admin låst op";
-    adminAccessBtn.disabled = true;
-    return;
-  }
-
-  adminAccessStatus.textContent = "Skriveadgang låst (kun læsning).";
-  adminAccessBtn.textContent = "Lås op som admin";
-  adminAccessBtn.disabled = false;
+  adminAccessStatus.textContent = "Kun admin kan redigere turneringer og spillere.";
+  adminAccessBtn.textContent = "Kun admin";
+  adminAccessBtn.disabled = true;
 }
 
 function requireAdminAccess() {
   if (hasAdminAccess()) return true;
-
-  const configuredPin = getConfiguredAdminPin();
-  if (!configuredPin) return true;
-
-  const enteredPin = prompt("Indtast admin-kode for at redigere turneringer:");
-  if (typeof enteredPin !== "string") return false;
-
-  if (enteredPin.trim() !== configuredPin) {
-    alert("Forkert admin-kode.");
-    return false;
-  }
-
-  state.isAdminUnlocked = true;
-  updateAdminAccessUi();
-  renderSavedPlayers();
-  renderPlayers();
-  renderSchedule();
-  return true;
+  alert("Kun Kristian Dybmose (admin) har adgang til denne handling.");
+  return false;
 }
 
 function setEditingEnabled(enabled) {
@@ -1104,7 +1122,7 @@ function renderSavedPlayers() {
   renderSavedPlayerSelector();
 }
 
-function registerPlayerInDatabase(name) {
+function registerPlayerInDatabase(name, owner = state.currentUser) {
   const trimmedName = String(name || "").trim();
   if (!trimmedName) return { ok: false, reason: "empty" };
 
@@ -1112,7 +1130,13 @@ function registerPlayerInDatabase(name) {
     return { ok: false, reason: "exists" };
   }
 
-  state.savedPlayers.push({ id: crypto.randomUUID(), name: trimmedName, stats: getDefaultPlayerStats() });
+  state.savedPlayers.push({
+    id: crypto.randomUUID(),
+    name: trimmedName,
+    stats: getDefaultPlayerStats(),
+    ownerUserId: owner?.id || null,
+    linkedEmail: owner?.email || null
+  });
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
   saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
   renderSavedPlayers();
@@ -1376,6 +1400,143 @@ async function completeTournament() {
   alert("Turnering afsluttet og spillerstatistik opdateret.");
 }
 
+
+function setAuthenticatedUi(isAuthenticated) {
+  setVisible(authCard, !isAuthenticated);
+  setVisible(appCard, isAuthenticated);
+  setVisible(logoutBtn, isAuthenticated);
+  if (adminAccessCard) setVisible(adminAccessCard, isAuthenticated);
+}
+
+function ensureDefaultAdminPlayer() {
+  const adminName = "Kristian Dybmose";
+  if (state.savedPlayers.some((player) => player.name.toLowerCase() === adminName.toLowerCase())) return;
+  state.savedPlayers.push({
+    id: crypto.randomUUID(),
+    name: adminName,
+    stats: getDefaultPlayerStats(),
+    ownerUserId: null,
+    linkedEmail: "dybmose@hotmail.com"
+  });
+  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const client = getSupabaseClient();
+  if (!client) return setAuthStatus("Supabase er ikke konfigureret.", true);
+
+  const email = authEmailInput.value.trim().toLowerCase();
+  const password = authPasswordInput.value;
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error) return setAuthStatus(`Login fejlede: ${error.message}`, true);
+
+  await initializeAppForUser(data.user);
+  loginForm.reset();
+  setAuthStatus("Logget ind.");
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  const client = getSupabaseClient();
+  if (!client) return setAuthStatus("Supabase er ikke konfigureret.", true);
+
+  const name = registerNameInput.value.trim();
+  const email = registerEmailInput.value.trim().toLowerCase();
+  const password = registerPasswordInput.value;
+
+  const { data, error } = await client.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: name } }
+  });
+  if (error) return setAuthStatus(`Registrering fejlede: ${error.message}`, true);
+
+  const createdUser = data.user;
+  if (createdUser) {
+    await initializeAppForUser(createdUser);
+    if (!state.savedPlayers.some((player) => String(player.linkedEmail || "").toLowerCase() === email)) {
+      registerPlayerInDatabase(name || email, createdUser);
+    }
+  }
+
+  registerForm.reset();
+  setAuthStatus("Registrering gennemført. Du er nu logget ind.");
+}
+
+async function handleForgotPassword() {
+  const client = getSupabaseClient();
+  if (!client) return setAuthStatus("Supabase er ikke konfigureret.", true);
+  const email = (authEmailInput?.value || registerEmailInput?.value || "").trim().toLowerCase();
+  if (!email) return setAuthStatus("Skriv din e-mail først.", true);
+
+  const { error } = await client.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+
+  if (error) return setAuthStatus(`Kunne ikke sende mail: ${error.message}`, true);
+  setAuthStatus("Link til nulstilling af adgangskode er sendt.");
+}
+
+async function handleLogout() {
+  const client = getSupabaseClient();
+  if (!client) return;
+  await client.auth.signOut();
+  state.currentUser = null;
+  state.isAdminUser = false;
+  state.savedPlayers = [];
+  await clearActiveTournament();
+  setAuthenticatedUi(false);
+  updateAdminAccessUi();
+  renderSavedPlayers();
+  renderPlayers();
+  renderSchedule();
+  renderStandings();
+  renderHome();
+}
+
+async function initializeAppForUser(user) {
+  state.currentUser = user;
+  state.isAdminUser = isKristianAdmin(user?.email);
+
+  state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
+    if (typeof player === "string") return { id: crypto.randomUUID(), name: player, stats: getDefaultPlayerStats(), ownerUserId: user?.id || null, linkedEmail: user?.email || null };
+    return {
+      id: player.id || crypto.randomUUID(),
+      name: String(player.name || "").trim(),
+      stats: normalizePlayerStats(player.stats),
+      ownerUserId: player.ownerUserId || null,
+      linkedEmail: player.linkedEmail || null
+    };
+  }).filter((player) => player.name);
+
+  ensureDefaultAdminPlayer();
+
+  state.savedPlayers = state.savedPlayers.filter((player) => {
+    if (state.isAdminUser) return true;
+    return player.ownerUserId === user.id || String(player.linkedEmail || "").toLowerCase() === String(user.email || "").toLowerCase();
+  });
+  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+
+  state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
+  state.draft = migrateTournamentData({ ...state.draft, players: state.draft.players || [], matches: state.draft.matches || [] });
+  syncDraftPlayersWithDatabase();
+  if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
+  if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
+
+  setAuthenticatedUi(true);
+  setActiveView("home");
+  updateAdminAccessUi();
+  setEditingEnabled(hasAdminAccess());
+  updateDraftInputs();
+  renderSavedPlayers();
+  renderPlayers();
+  renderSchedule();
+  renderStandings();
+  renderHome();
+}
+
 savedPlayerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!requireAdminAccess()) return;
@@ -1433,48 +1594,28 @@ statsSortInput.addEventListener("change", renderAggregateStats);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
-adminAccessBtn.addEventListener("click", () => {
-  requireAdminAccess();
-});
+adminAccessBtn.addEventListener("click", requireAdminAccess);
+loginForm?.addEventListener("submit", handleLogin);
+registerForm?.addEventListener("submit", handleRegister);
+forgotPasswordBtn?.addEventListener("click", handleForgotPassword);
+logoutBtn?.addEventListener("click", handleLogout);
 
 (async function init() {
   await hydrateRemoteStorage();
-
-  Object.values(STORAGE_KEYS).forEach((key) => {
-    if (key in remoteStorage) return;
-    const localData = readLocalStorage(key);
-    if (localData === undefined) return;
-    remoteStorage[key] = clone(localData);
-  });
-  queueRemotePersist();
-
-  state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
-    if (typeof player === "string") return { id: crypto.randomUUID(), name: player, stats: getDefaultPlayerStats() };
-    return {
-      id: player.id || crypto.randomUUID(),
-      name: String(player.name || "").trim(),
-      stats: normalizePlayerStats(player.stats)
-    };
-  }).filter((player) => player.name);
-  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
-
-  state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
-  state.draft = migrateTournamentData({ ...state.draft, players: state.draft.players || [], matches: state.draft.matches || [] });
-  syncDraftPlayersWithDatabase();
-  if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
-  if (!["classic", "nearest"].includes(state.draft.type)) state.draft.type = "classic";
-
   setVisible(adminCard, false);
   setVisible(adminPlayerCard, false);
-  setVisible(appCard, true);
+  setAuthenticatedUi(false);
+  setAuthStatus("Log ind for at åbne appen.");
 
-  setActiveView("home");
-  updateAdminAccessUi();
-  setEditingEnabled(hasAdminAccess());
-  updateDraftInputs();
-  renderSavedPlayers();
-  renderPlayers();
-  renderSchedule();
-  renderStandings();
-  renderHome();
+  const client = getSupabaseClient();
+  if (!client) {
+    setAuthStatus("Supabase mangler i konfigurationen.", true);
+    return;
+  }
+
+  const { data } = await client.auth.getUser();
+  if (data?.user) {
+    await initializeAppForUser(data.user);
+    setAuthStatus("");
+  }
 })();
