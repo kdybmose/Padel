@@ -61,6 +61,7 @@ const STORAGE_KEYS = {
 
 const REMOTE_STATE_ROW_ID = "public";
 const REMOTE_STATE_TABLE = "app_state";
+const LOCAL_STORAGE_PREFIX = "padel_cache_";
 const remoteStorage = {};
 let persistTimer = null;
 let isPersisting = false;
@@ -169,13 +170,40 @@ async function hydrateRemoteStorage() {
   }
 }
 
+function getLocalStorageKey(key) {
+  return `${LOCAL_STORAGE_PREFIX}${key}`;
+}
+
+function writeLocalStorage(key, data) {
+  try {
+    window.localStorage.setItem(getLocalStorageKey(key), JSON.stringify(data));
+  } catch (error) {
+    console.warn("Kunne ikke gemme data lokalt:", error);
+  }
+}
+
+function readLocalStorage(key) {
+  try {
+    const value = window.localStorage.getItem(getLocalStorageKey(key));
+    if (!value) return undefined;
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn("Kunne ikke læse lokal data:", error);
+    return undefined;
+  }
+}
+
 function saveToStorage(key, data) {
   remoteStorage[key] = clone(data);
+  writeLocalStorage(key, data);
   queueRemotePersist();
 }
 
 function loadFromStorage(key, fallback) {
-  return key in remoteStorage ? clone(remoteStorage[key]) : fallback;
+  if (key in remoteStorage) return clone(remoteStorage[key]);
+  const localData = readLocalStorage(key);
+  if (localData !== undefined) return clone(localData);
+  return fallback;
 }
 
 function getConfiguredAdminPin() {
@@ -264,7 +292,7 @@ function isDraftLockedForPlayerChanges() {
 }
 
 function getPreferredScheduleMode() {
-  return "full";
+  return window.matchMedia("(max-width: 768px)").matches ? "focus" : "full";
 }
 
 function ensurePlayerIds(players) {
@@ -583,13 +611,18 @@ function updateRoundsHint() {
   roundsHint.textContent = `Kombinationer: ${totalMatches} kampe fordelt på ca. ${totalRounds} runder med ${courts} bane(r).`;
 }
 
-function buildDraftMatches(players, mode, courts, type) {
+function buildDraftMatches(players, mode, courts, type, existingMatches = []) {
+  if (type === "nearest" && existingMatches.length > 0) {
+    return buildNearestDraftMatches(players, mode, courts, existingMatches);
+  }
   return buildRoundPackage(players, mode, courts);
 }
 
 function appendRoundsToDraft() {
   const nextRound = state.draft.matches.reduce((max, m) => Math.max(max, m.round), 0) + 1;
-  const extraMatches = buildRoundPackage(state.draft.players, state.draft.mode, state.draft.courts, nextRound);
+  const extraMatches = state.draft.type === "nearest"
+    ? buildNearestDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.matches)
+    : buildRoundPackage(state.draft.players, state.draft.mode, state.draft.courts, nextRound);
   state.draft.matches.push(...extraMatches);
 }
 
@@ -1170,6 +1203,15 @@ fullViewBtn?.addEventListener("click", () => {
 
 (async function init() {
   await hydrateRemoteStorage();
+
+  Object.values(STORAGE_KEYS).forEach((key) => {
+    if (key in remoteStorage) return;
+    const localData = readLocalStorage(key);
+    if (localData === undefined) return;
+    remoteStorage[key] = clone(localData);
+  });
+  queueRemotePersist();
+
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
     if (typeof player === "string") return { id: crypto.randomUUID(), name: player };
     return { id: player.id || crypto.randomUUID(), name: String(player.name || "").trim() };
