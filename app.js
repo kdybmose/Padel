@@ -40,12 +40,9 @@ const scheduleEmpty = document.getElementById("schedule-empty");
 const standingsRoot = document.getElementById("standings");
 const standingsEmpty = document.getElementById("standings-empty");
 
-const historyList = document.getElementById("history-list");
-const historyEmpty = document.getElementById("history-empty");
 const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
-const clearHistoryBtn = document.getElementById("clear-history-btn");
 const adminAccessBtn = document.getElementById("admin-access-btn");
 const adminAccessStatus = document.getElementById("admin-access-status");
 
@@ -53,7 +50,6 @@ const adminAccessStatus = document.getElementById("admin-access-status");
 
 const STORAGE_KEYS = {
   savedPlayers: "padel_saved_players",
-  tournaments: "padel_tournaments",
   draft: "padel_active_draft"
 };
 
@@ -66,7 +62,6 @@ let isPersisting = false;
 
 const state = {
   savedPlayers: [],
-  tournaments: [],
   activeView: "home",
   isAdminUnlocked: false,
   draft: {
@@ -87,6 +82,20 @@ function setVisible(node, visible) {
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
+}
+
+function getDefaultPlayerStats() {
+  return { totalBallsWon: 0, totalBallsAgainst: 0, totalMatches: 0, totalWins: 0 };
+}
+
+function normalizePlayerStats(stats = {}) {
+  const defaults = getDefaultPlayerStats();
+  return {
+    totalBallsWon: Number.isFinite(stats.totalBallsWon) ? Math.max(0, Number(stats.totalBallsWon)) : defaults.totalBallsWon,
+    totalBallsAgainst: Number.isFinite(stats.totalBallsAgainst) ? Math.max(0, Number(stats.totalBallsAgainst)) : defaults.totalBallsAgainst,
+    totalMatches: Number.isFinite(stats.totalMatches) ? Math.max(0, Number(stats.totalMatches)) : defaults.totalMatches,
+    totalWins: Number.isFinite(stats.totalWins) ? Math.max(0, Number(stats.totalWins)) : defaults.totalWins
+  };
 }
 
 function getPlayerRecordById(playerId) {
@@ -274,8 +283,7 @@ function setEditingEnabled(enabled) {
     completeBtn,
     mobileGenerateBtn,
     mobileAddRoundBtn,
-    mobileCompleteBtn,
-    clearHistoryBtn
+    mobileCompleteBtn
   ];
 
   controls.forEach((control) => {
@@ -758,27 +766,21 @@ function buildNearestOpponentRounds(
 }
 
 function getAggregateStandingsForPlayers(players) {
-  const aggregatedRows = getBaseAggregateStats().sort(
-    (a, b) =>
-      b.tournamentWins - a.tournamentWins ||
-      b.totalBallsWon - a.totalBallsWon ||
-      b.avgBallsPerMatch - a.avgBallsPerMatch ||
-      a.playerName.localeCompare(b.playerName, "da")
-  );
-  const aggregateByPlayer = new Map(aggregatedRows.map((row, index) => [row.playerId, { ...row, index }]));
+  const aggregateByPlayer = new Map(getBaseAggregateStats().map((row) => [row.playerId, row]));
 
   return players
-    .map((playerId) => ({
-      playerId,
-      tournamentWins: aggregateByPlayer.get(playerId)?.tournamentWins ?? 0,
-      totalBallsWon: aggregateByPlayer.get(playerId)?.totalBallsWon ?? 0,
-      avgBallsPerMatch: aggregateByPlayer.get(playerId)?.avgBallsPerMatch ?? 0,
-      aggregateIndex: aggregateByPlayer.get(playerId)?.index ?? Number.MAX_SAFE_INTEGER
-    }))
+    .map((playerId) => {
+      const row = aggregateByPlayer.get(playerId);
+      return {
+        playerId,
+        totalWins: row?.totalWins ?? 0,
+        totalBallsWon: row?.totalBallsWon ?? 0,
+        avgBallsPerMatch: row?.avgBallsPerMatch ?? 0
+      };
+    })
     .sort(
       (a, b) =>
-        a.aggregateIndex - b.aggregateIndex ||
-        b.tournamentWins - a.tournamentWins ||
+        b.totalWins - a.totalWins ||
         b.totalBallsWon - a.totalBallsWon ||
         b.avgBallsPerMatch - a.avgBallsPerMatch ||
         getPlayerName(a.playerId).localeCompare(getPlayerName(b.playerId), "da")
@@ -897,6 +899,54 @@ function getTournamentStandings(tournament) {
     );
 }
 
+function getCompletedTournamentStatDeltas(tournament) {
+  const deltas = new Map((tournament.players || []).map((playerId) => [playerId, getDefaultPlayerStats()]));
+
+  (tournament.matches || []).forEach((match) => {
+    if (!isMatchScored(match)) return;
+
+    (match.teamA || []).forEach((playerId) => {
+      const row = deltas.get(playerId) || getDefaultPlayerStats();
+      row.totalBallsWon += match.scoreA;
+      row.totalBallsAgainst += match.scoreB;
+      row.totalMatches += 1;
+      if (match.scoreA > match.scoreB) row.totalWins += 1;
+      deltas.set(playerId, row);
+    });
+
+    (match.teamB || []).forEach((playerId) => {
+      const row = deltas.get(playerId) || getDefaultPlayerStats();
+      row.totalBallsWon += match.scoreB;
+      row.totalBallsAgainst += match.scoreA;
+      row.totalMatches += 1;
+      if (match.scoreB > match.scoreA) row.totalWins += 1;
+      deltas.set(playerId, row);
+    });
+  });
+
+  return deltas;
+}
+
+function applyCompletedTournamentStats(tournament) {
+  const deltas = getCompletedTournamentStatDeltas(tournament);
+
+  state.savedPlayers = state.savedPlayers.map((player) => {
+    const delta = deltas.get(player.id);
+    if (!delta) return player;
+
+    const currentStats = normalizePlayerStats(player.stats);
+    return {
+      ...player,
+      stats: {
+        totalBallsWon: currentStats.totalBallsWon + delta.totalBallsWon,
+        totalBallsAgainst: currentStats.totalBallsAgainst + delta.totalBallsAgainst,
+        totalMatches: currentStats.totalMatches + delta.totalMatches,
+        totalWins: currentStats.totalWins + delta.totalWins
+      }
+    };
+  });
+}
+
 function allResultsEntered() {
   return state.draft.matches.length > 0 && state.draft.matches.every(isMatchScored);
 }
@@ -963,6 +1013,7 @@ function renderPlayers() {
       renderPlayers();
       renderSchedule();
       renderStandings();
+      renderHome();
       await saveActiveTournament();
     });
     li.appendChild(removeBtn);
@@ -1022,7 +1073,7 @@ function renderSavedPlayers() {
       renderPlayers();
       renderSchedule();
       renderStandings();
-      renderHistory();
+      renderHome();
       await saveActiveTournament();
     });
 
@@ -1152,36 +1203,27 @@ function renderStandings() {
 }
 
 function getBaseAggregateStats() {
-  const stats = new Map();
-  state.tournaments.forEach((tournament) => {
-    const standings = getTournamentStandings(tournament.data);
-    if (!standings.length) return;
-    const winner = standings[0].playerId;
-    standings.forEach((row) => {
-      if (!stats.has(row.playerId)) {
-        stats.set(row.playerId, { playerId: row.playerId, playerName: row.playerName, tournamentWins: 0, totalBallsWon: 0, totalMatches: 0 });
-      }
-      const aggregate = stats.get(row.playerId);
-      aggregate.playerName = getPlayerName(row.playerId, tournament.data.playerSnapshot || {});
-      aggregate.totalBallsWon += row.totalBallsWon;
-      aggregate.totalMatches += row.matches;
-      if (row.playerId === winner) aggregate.tournamentWins += 1;
-    });
+  return state.savedPlayers.map((player) => {
+    const stats = normalizePlayerStats(player.stats);
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      totalBallsWon: stats.totalBallsWon,
+      totalBallsAgainst: stats.totalBallsAgainst,
+      totalMatches: stats.totalMatches,
+      totalWins: stats.totalWins,
+      avgBallsPerMatch: stats.totalMatches ? Number((stats.totalBallsWon / stats.totalMatches).toFixed(2)) : 0
+    };
   });
-
-  return [...stats.values()].map((row) => ({
-    ...row,
-    avgBallsPerMatch: row.totalMatches ? Number((row.totalBallsWon / row.totalMatches).toFixed(2)) : 0
-  }));
 }
 
 function getAggregateStats() {
   const rows = getBaseAggregateStats();
 
   const sortBy = statsSortInput.value;
-  if (sortBy === "totalBalls") rows.sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.tournamentWins - a.tournamentWins);
+  if (sortBy === "totalBalls") rows.sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.totalWins - a.totalWins);
   else if (sortBy === "avgBalls") rows.sort((a, b) => b.avgBallsPerMatch - a.avgBallsPerMatch || b.totalBallsWon - a.totalBallsWon);
-  else rows.sort((a, b) => b.tournamentWins - a.tournamentWins || b.totalBallsWon - a.totalBallsWon || a.playerName.localeCompare(b.playerName, "da"));
+  else rows.sort((a, b) => b.totalWins - a.totalWins || b.totalBallsWon - a.totalBallsWon || a.playerName.localeCompare(b.playerName, "da"));
 
   return rows;
 }
@@ -1194,9 +1236,9 @@ function renderAggregateStats() {
 
   const table = document.createElement("table");
   table.className = "stats-table";
-  table.innerHTML = `<thead><tr><th>Spiller</th><th>Turneringssejre</th><th>Samlet bolde vundet</th><th>Kampe</th><th>Bolde vundet pr. kamp</th></tr></thead><tbody>${rows
+  table.innerHTML = `<thead><tr><th>Spiller</th><th>Bolde vundet</th><th>Bolde imod</th><th>Kampe</th><th>Sejre</th><th>Bolde pr. kamp</th></tr></thead><tbody>${rows
     .map(
-      (row, i) => `<tr><td>${i === 0 ? "⭐ " : ""}${row.playerName}</td><td>${row.tournamentWins}</td><td>${row.totalBallsWon}</td><td>${row.totalMatches}</td><td>${row.avgBallsPerMatch}</td></tr>`
+      (row, i) => `<tr><td>${i === 0 ? "⭐ " : ""}${row.playerName}</td><td>${row.totalBallsWon}</td><td>${row.totalBallsAgainst}</td><td>${row.totalMatches}</td><td>${row.totalWins}</td><td>${row.avgBallsPerMatch}</td></tr>`
     )
     .join("")}</tbody>`;
   const tableWrap = document.createElement("div");
@@ -1205,31 +1247,7 @@ function renderAggregateStats() {
   aggregateRoot.appendChild(tableWrap);
 }
 
-
-async function clearTournamentHistory() {
-  if (!requireAdminAccess()) return;
-  if (!state.tournaments.length) return;
-
-  const shouldDelete = confirm("Vil du slette hele historikken? Dette kan ikke fortrydes.");
-  if (!shouldDelete) return;
-
-  state.tournaments = [];
-  saveToStorage(STORAGE_KEYS.tournaments, state.tournaments);
-  renderHistory();
-}
-
-function renderHistory() {
-  historyList.innerHTML = "";
-  setVisible(historyEmpty, state.tournaments.length === 0);
-
-  state.tournaments.forEach((tournament) => {
-    const standings = getTournamentStandings(tournament.data);
-    const winner = standings[0];
-    const li = document.createElement("li");
-    li.innerHTML = `<div><strong>${tournament.name}</strong><br><small>${new Date(tournament.updated_at).toLocaleString("da-DK")}</small><br><small>Vinder: ${winner ? `${winner.playerName} (${winner.totalBallsWon} bolde)` : "-"}</small></div>`;
-    historyList.appendChild(li);
-  });
-
+function renderHome() {
   renderAggregateStats();
 }
 
@@ -1326,15 +1344,17 @@ async function completeTournament() {
     matches: clone(state.draft.matches)
   };
 
-  state.tournaments.unshift({ id: crypto.randomUUID(), name: state.draft.name, data: payload, updated_at: new Date().toISOString() });
-  saveToStorage(STORAGE_KEYS.tournaments, state.tournaments);
+  applyCompletedTournamentStats(payload);
+  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
 
   await clearActiveTournament();
+  setActiveView("home");
+  renderSavedPlayers();
   renderPlayers();
   renderSchedule();
   renderStandings();
-  renderHistory();
-  alert("Turnering gemt i historik.");
+  renderHome();
+  alert("Turnering afsluttet og spillerstatistik opdateret.");
 }
 
 savedPlayerForm.addEventListener("submit", (event) => {
@@ -1346,11 +1366,12 @@ savedPlayerForm.addEventListener("submit", (event) => {
     alert("Spilleren findes allerede i din liste.");
     return;
   }
-  state.savedPlayers.push({ id: crypto.randomUUID(), name });
+  state.savedPlayers.push({ id: crypto.randomUUID(), name, stats: getDefaultPlayerStats() });
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
   saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
   savedPlayerForm.reset();
   renderSavedPlayers();
+  renderHome();
 });
 
 playerForm.addEventListener("submit", async (event) => {
@@ -1383,7 +1404,6 @@ mobileGenerateBtn.addEventListener("click", generateMexicanoTournament);
 mobileAddRoundBtn.addEventListener("click", addRounds);
 mobileCompleteBtn.addEventListener("click", completeTournament);
 statsSortInput.addEventListener("change", renderAggregateStats);
-clearHistoryBtn.addEventListener("click", clearTournamentHistory);
 courtTypeInput.addEventListener("change", updateRoundsHint);
 courtsCountInput.addEventListener("input", updateRoundsHint);
 tournamentTypeInput.addEventListener("change", updateRoundsHint);
@@ -1403,15 +1423,15 @@ adminAccessBtn.addEventListener("click", () => {
   queueRemotePersist();
 
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
-    if (typeof player === "string") return { id: crypto.randomUUID(), name: player };
-    return { id: player.id || crypto.randomUUID(), name: String(player.name || "").trim() };
+    if (typeof player === "string") return { id: crypto.randomUUID(), name: player, stats: getDefaultPlayerStats() };
+    return {
+      id: player.id || crypto.randomUUID(),
+      name: String(player.name || "").trim(),
+      stats: normalizePlayerStats(player.stats)
+    };
   }).filter((player) => player.name);
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
 
-  state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []).map((tournament) => ({
-    ...tournament,
-    data: migrateTournamentData(tournament.data || {})
-  }));
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
   state.draft = migrateTournamentData({ ...state.draft, players: state.draft.players || [], matches: state.draft.matches || [] });
   syncDraftPlayersWithDatabase();
@@ -1430,5 +1450,5 @@ adminAccessBtn.addEventListener("click", () => {
   renderPlayers();
   renderSchedule();
   renderStandings();
-  renderHistory();
+  renderHome();
 })();

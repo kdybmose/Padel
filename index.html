@@ -23,13 +23,13 @@
       </section>
 
       <nav class="mobile-view-switch" aria-label="Mobil navigation">
-        <button id="mobile-home-tab" type="button" class="primary">Historik</button>
+        <button id="mobile-home-tab" type="button" class="primary">Rangliste</button>
         <button id="mobile-current-tab" type="button">Nuværende</button>
         <button id="mobile-players-tab" type="button">Spillerdatabase</button>
       </nav>
 
       <nav class="view-switch card" aria-label="Navigation">
-        <button id="home-tab" type="button" class="primary">Historik</button>
+        <button id="home-tab" type="button" class="primary">Rangliste</button>
         <button id="current-tab" type="button">Nuværende turnering</button>
         <button id="players-tab" type="button">Spillerdatabase</button>
       </nav>
@@ -58,24 +58,20 @@
 
         <section id="home-view">
           <section class="card">
-            <h2>Historik og samlet oversigt</h2>
+            <h2>Rangliste</h2>
             <div class="row stacked-mobile">
               <label>
-                Sortér samlet statistik efter
+                Sortér rangliste efter
                 <select id="stats-sort">
-                  <option value="wins">Turneringssejre</option>
-                  <option value="totalBalls">Samlet bolde vundet</option>
-                  <option value="avgBalls">Bolde vundet pr. kamp</option>
+                  <option value="totalBalls">Bolde vundet (point)</option>
+                  <option value="wins">Sejre</option>
+                  <option value="avgBalls">Bolde pr. kamp</option>
                 </select>
               </label>
-              <button id="clear-history-btn" type="button" class="danger">Slet samlet historik</button>
             </div>
 
-            <div id="history-empty" class="muted">Ingen gemte turneringer endnu.</div>
-            <ul id="history-list" class="simple-list"></ul>
-
-            <h3>Samlet spillerstatistik</h3>
-            <div id="aggregate-empty" class="muted">Ingen statistik endnu.</div>
+            <h3>Spiller-rangliste (samlet på tværs af alle turneringstyper)</h3>
+            <div id="aggregate-empty" class="muted">Ingen spillerstatistik endnu.</div>
             <div id="aggregate"></div>
           </section>
         </section>
