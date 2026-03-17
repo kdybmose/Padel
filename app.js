@@ -1222,6 +1222,7 @@ function getAggregateStats() {
 
   const sortBy = statsSortInput.value;
   if (sortBy === "totalBalls") rows.sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.totalWins - a.totalWins);
+  else if (sortBy === "ballsAgainst") rows.sort((a, b) => a.totalBallsAgainst - b.totalBallsAgainst || b.totalWins - a.totalWins || b.totalBallsWon - a.totalBallsWon);
   else if (sortBy === "avgBalls") rows.sort((a, b) => b.avgBallsPerMatch - a.avgBallsPerMatch || b.totalBallsWon - a.totalBallsWon);
   else rows.sort((a, b) => b.totalWins - a.totalWins || b.totalBallsWon - a.totalBallsWon || a.playerName.localeCompare(b.playerName, "da"));
 
