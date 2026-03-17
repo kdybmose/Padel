@@ -73,6 +73,7 @@ const state = {
   scheduleViewMode: "full",
   draft: {
     players: [],
+    playerSnapshot: {},
     mode: "single",
     type: "classic",
     ballsPerRound: 24,
@@ -90,8 +91,16 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
+function getPlayerRecordById(playerId) {
+  return state.savedPlayers.find((player) => player.id === playerId) || null;
+}
+
+function getPlayerName(playerId, snapshot = {}) {
+  return getPlayerRecordById(playerId)?.name || snapshot[playerId] || playerId;
+}
+
 function getDisplayName(team) {
-  return team.join(" / ");
+  return team.map((playerId) => getPlayerName(playerId, state.draft.playerSnapshot || {})).join(" / ");
 }
 
 function getSupabaseConfig() {
@@ -255,7 +264,44 @@ function isDraftLockedForPlayerChanges() {
 }
 
 function getPreferredScheduleMode() {
-  return (Number(state.draft.courts) || 1) <= 1 ? "full" : "focus";
+  return "full";
+}
+
+function ensurePlayerIds(players) {
+  const byName = new Map(state.savedPlayers.map((player) => [player.name.toLowerCase(), player.id]));
+  return players.map((player) => {
+    if (typeof player !== "string") return String(player);
+    if (player.startsWith("id:")) return player.slice(3);
+    return byName.get(player.toLowerCase()) || player;
+  });
+}
+
+function buildPlayerSnapshot(playerIds) {
+  return playerIds.reduce((snapshot, playerId) => {
+    snapshot[playerId] = getPlayerName(playerId);
+    return snapshot;
+  }, {});
+}
+
+function migrateTournamentData(tournamentData) {
+  const players = ensurePlayerIds(tournamentData.players || []);
+  const playerSnapshot = {
+    ...(tournamentData.playerSnapshot || {}),
+    ...buildPlayerSnapshot(players)
+  };
+
+  const matches = (tournamentData.matches || []).map((match) => ({
+    ...match,
+    teamA: ensurePlayerIds(match.teamA || []),
+    teamB: ensurePlayerIds(match.teamB || [])
+  }));
+
+  return {
+    ...tournamentData,
+    players,
+    playerSnapshot,
+    matches
+  };
 }
 
 function updateRoundActionButtons() {
@@ -305,7 +351,7 @@ async function saveActiveTournament() {
 }
 
 async function clearActiveTournament() {
-  state.draft = { players: [], mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
+  state.draft = { players: [], playerSnapshot: {}, mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
   state.scheduleViewMode = "full";
   updateDraftInputs();
   saveToStorage(STORAGE_KEYS.draft, state.draft);
@@ -436,15 +482,15 @@ function scheduleMatches(rawMatches, courts, startingRound = 1) {
 
 
 function buildNearestOpponentRounds(players, standingsRows, mode, courts, startingRound) {
-  const rankByPlayer = new Map(standingsRows.map((row, index) => [row.player, index]));
+  const rankByPlayer = new Map(standingsRows.map((row, index) => [row.playerId, index]));
   const sortedPlayers = [...players].sort((a, b) => {
     const indexA = rankByPlayer.get(a);
     const indexB = rankByPlayer.get(b);
-    if (indexA === undefined && indexB === undefined) return a.localeCompare(b, "da");
+    if (indexA === undefined && indexB === undefined) return getPlayerName(a).localeCompare(getPlayerName(b), "da");
     if (indexA === undefined) return 1;
     if (indexB === undefined) return -1;
     if (indexA !== indexB) return indexA - indexB;
-    return a.localeCompare(b, "da");
+    return getPlayerName(a).localeCompare(getPlayerName(b), "da");
   });
 
   const roundMatches = [];
@@ -471,16 +517,22 @@ function buildNearestOpponentRounds(players, standingsRows, mode, courts, starti
 }
 
 function getAggregateStandingsForPlayers(players) {
-  const aggregatedRows = getBaseAggregateStats().sort((a, b) => b.tournamentWins - a.tournamentWins || b.totalBallsWon - a.totalBallsWon || b.avgBallsPerMatch - a.avgBallsPerMatch || a.player.localeCompare(b.player, "da"));
-  const aggregateByPlayer = new Map(aggregatedRows.map((row, index) => [row.player, { ...row, index }]));
+  const aggregatedRows = getBaseAggregateStats().sort(
+    (a, b) =>
+      b.tournamentWins - a.tournamentWins ||
+      b.totalBallsWon - a.totalBallsWon ||
+      b.avgBallsPerMatch - a.avgBallsPerMatch ||
+      a.playerName.localeCompare(b.playerName, "da")
+  );
+  const aggregateByPlayer = new Map(aggregatedRows.map((row, index) => [row.playerId, { ...row, index }]));
 
   return players
-    .map((player) => ({
-      player,
-      tournamentWins: aggregateByPlayer.get(player)?.tournamentWins ?? 0,
-      totalBallsWon: aggregateByPlayer.get(player)?.totalBallsWon ?? 0,
-      avgBallsPerMatch: aggregateByPlayer.get(player)?.avgBallsPerMatch ?? 0,
-      aggregateIndex: aggregateByPlayer.get(player)?.index ?? Number.MAX_SAFE_INTEGER
+    .map((playerId) => ({
+      playerId,
+      tournamentWins: aggregateByPlayer.get(playerId)?.tournamentWins ?? 0,
+      totalBallsWon: aggregateByPlayer.get(playerId)?.totalBallsWon ?? 0,
+      avgBallsPerMatch: aggregateByPlayer.get(playerId)?.avgBallsPerMatch ?? 0,
+      aggregateIndex: aggregateByPlayer.get(playerId)?.index ?? Number.MAX_SAFE_INTEGER
     }))
     .sort(
       (a, b) =>
@@ -488,14 +540,14 @@ function getAggregateStandingsForPlayers(players) {
         b.tournamentWins - a.tournamentWins ||
         b.totalBallsWon - a.totalBallsWon ||
         b.avgBallsPerMatch - a.avgBallsPerMatch ||
-        a.player.localeCompare(b.player, "da")
+        getPlayerName(a.playerId).localeCompare(getPlayerName(b.playerId), "da")
     );
 }
 
 function buildNearestDraftMatches(players, mode, courts, existingMatches = []) {
   const hasCurrentResults = existingMatches.some((match) => Number.isInteger(match.scoreA) && Number.isInteger(match.scoreB));
   const standings = hasCurrentResults
-    ? getTournamentStandings({ players, matches: existingMatches })
+    ? getTournamentStandings({ players, matches: existingMatches, playerSnapshot: buildPlayerSnapshot(players) })
     : getAggregateStandingsForPlayers(players);
   const firstRound = Math.max(1, existingMatches.reduce((max, m) => Math.max(max, m.round || 0), 0) + 1);
   return buildNearestOpponentRounds(players, standings, mode, courts, firstRound);
@@ -551,20 +603,25 @@ function appendRoundsToDraft() {
 }
 
 function getTournamentStandings(tournament) {
+  const snapshot = tournament.playerSnapshot || {};
   const map = new Map();
-  tournament.players.forEach((player) => map.set(player, { player, totalBallsWon: 0, totalBallsAgainst: 0, matches: 0, wins: 0 }));
+  tournament.players.forEach((playerId) =>
+    map.set(playerId, { playerId, playerName: getPlayerName(playerId, snapshot), totalBallsWon: 0, totalBallsAgainst: 0, matches: 0, wins: 0 })
+  );
 
   tournament.matches.forEach((match) => {
     if (match.scoreA === null || match.scoreB === null) return;
-    match.teamA.forEach((name) => {
-      const row = map.get(name);
+    match.teamA.forEach((playerId) => {
+      const row = map.get(playerId);
+      if (!row) return;
       row.totalBallsWon += match.scoreA;
       row.totalBallsAgainst += match.scoreB;
       row.matches += 1;
       if (match.scoreA > match.scoreB) row.wins += 1;
     });
-    match.teamB.forEach((name) => {
-      const row = map.get(name);
+    match.teamB.forEach((playerId) => {
+      const row = map.get(playerId);
+      if (!row) return;
       row.totalBallsWon += match.scoreB;
       row.totalBallsAgainst += match.scoreA;
       row.matches += 1;
@@ -583,7 +640,7 @@ function getTournamentStandings(tournament) {
         b.wins - a.wins ||
         b.ballDiff - a.ballDiff ||
         b.totalBallsWon - a.totalBallsWon ||
-        a.player.localeCompare(b.player, "da")
+        a.playerName.localeCompare(b.playerName, "da")
     );
 }
 
@@ -591,27 +648,54 @@ function allResultsEntered() {
   return state.draft.matches.length > 0 && state.draft.matches.every((m) => Number.isInteger(m.scoreA) && Number.isInteger(m.scoreB));
 }
 
+function getPlannedMatchesByPlayer(tournament) {
+  const counts = new Map((tournament.players || []).map((playerId) => [playerId, 0]));
+  (tournament.matches || []).forEach((match) => {
+    [...(match.teamA || []), ...(match.teamB || [])].forEach((playerId) => {
+      counts.set(playerId, (counts.get(playerId) || 0) + 1);
+    });
+  });
+  return counts;
+}
+
+function getUnevenParticipationDetails(tournament) {
+  const entries = [...getPlannedMatchesByPlayer(tournament).entries()].map(([playerId, matches]) => ({
+    playerId,
+    playerName: getPlayerName(playerId, tournament.playerSnapshot || {}),
+    matches
+  }));
+  if (!entries.length) return null;
+  const minMatches = Math.min(...entries.map((entry) => entry.matches));
+  const maxMatches = Math.max(...entries.map((entry) => entry.matches));
+  if (minMatches === maxMatches) return null;
+  return { minMatches, maxMatches, entries };
+}
+
 function renderSavedPlayerSelector() {
   savedPlayerSelect.innerHTML = `<option value="">Vælg spiller fra databasen</option>${state.savedPlayers
-    .map((player) => `<option value="${player.name}">${player.name}</option>`)
+    .map((player) => `<option value="${player.id}">${player.name}</option>`)
     .join("")}`;
 }
 
 function syncDraftPlayersWithDatabase() {
-  const allowedPlayers = new Set(state.savedPlayers.map((player) => player.name));
-  const filteredPlayers = state.draft.players.filter((name) => allowedPlayers.has(name));
-  if (filteredPlayers.length !== state.draft.players.length) {
-    state.draft.players = filteredPlayers;
-    state.draft.matches = [];
-  }
+  state.draft.players = ensurePlayerIds(state.draft.players);
+  state.draft.matches = state.draft.matches.map((match) => ({
+    ...match,
+    teamA: ensurePlayerIds(match.teamA || []),
+    teamB: ensurePlayerIds(match.teamB || [])
+  }));
+  state.draft.playerSnapshot = {
+    ...(state.draft.playerSnapshot || {}),
+    ...buildPlayerSnapshot(state.draft.players)
+  };
 }
 
 function renderPlayers() {
   setEditingEnabled(hasAdminAccess());
   playerList.innerHTML = "";
-  state.draft.players.forEach((name, index) => {
+  state.draft.players.forEach((playerId, index) => {
     const li = document.createElement("li");
-    li.textContent = name;
+    li.textContent = getPlayerName(playerId, state.draft.playerSnapshot || {});
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.textContent = "✕";
@@ -654,12 +738,38 @@ function renderSavedPlayers() {
     useBtn.addEventListener("click", async () => {
       if (!requireAdminAccess()) return;
       if (isDraftLockedForPlayerChanges()) return alert("Spillerlisten kan ikke ændres efter turneringen er startet.");
-      if (state.draft.players.includes(player.name)) return alert("Spilleren er allerede med i turneringen.");
+      if (state.draft.players.includes(player.id)) return alert("Spilleren er allerede med i turneringen.");
       if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
-      state.draft.players.push(player.name);
+      state.draft.players.push(player.id);
+      state.draft.playerSnapshot[player.id] = player.name;
       setActiveView("current");
       renderPlayers();
       updateRoundsHint();
+      await saveActiveTournament();
+    });
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "Redigér";
+    editBtn.disabled = !hasAdminAccess();
+    editBtn.addEventListener("click", async () => {
+      if (!requireAdminAccess()) return;
+      const nextName = prompt("Nyt spillernavn:", player.name);
+      if (typeof nextName !== "string") return;
+      const trimmedName = nextName.trim();
+      if (!trimmedName) return alert("Navnet må ikke være tomt.");
+      const exists = state.savedPlayers.some((saved) => saved.id !== player.id && saved.name.toLowerCase() === trimmedName.toLowerCase());
+      if (exists) return alert("Der findes allerede en spiller med det navn.");
+
+      player.name = trimmedName;
+      state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+      state.draft.playerSnapshot[player.id] = trimmedName;
+      saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
+      renderSavedPlayers();
+      renderPlayers();
+      renderSchedule();
+      renderStandings();
+      renderHistory();
       await saveActiveTournament();
     });
 
@@ -680,7 +790,7 @@ function renderSavedPlayers() {
       await saveActiveTournament();
     });
 
-    actions.append(useBtn, deleteBtn);
+    actions.append(useBtn, editBtn, deleteBtn);
     li.appendChild(actions);
     savedPlayerList.appendChild(li);
   });
@@ -808,7 +918,7 @@ function renderStandings() {
   table.className = "stats-table";
   table.innerHTML = `<thead><tr><th>Spiller</th><th>Bolde vundet</th><th>Bolde imod</th><th>Kampe</th><th>Sejre</th><th>Bolde pr. kamp</th></tr></thead><tbody>${standings
     .map(
-      (row, i) => `<tr><td>${i === 0 ? "🏆 " : ""}${row.player}</td><td>${row.totalBallsWon}</td><td>${row.totalBallsAgainst}</td><td>${row.matches}</td><td>${row.wins}</td><td>${row.avgBallsPerMatch}</td></tr>`
+      (row, i) => `<tr><td>${i === 0 ? "🏆 " : ""}${row.playerName}</td><td>${row.totalBallsWon}</td><td>${row.totalBallsAgainst}</td><td>${row.matches}</td><td>${row.wins}</td><td>${row.avgBallsPerMatch}</td></tr>`
     )
     .join("")}</tbody>`;
   const tableWrap = document.createElement("div");
@@ -822,13 +932,16 @@ function getBaseAggregateStats() {
   state.tournaments.forEach((tournament) => {
     const standings = getTournamentStandings(tournament.data);
     if (!standings.length) return;
-    const winner = standings[0].player;
+    const winner = standings[0].playerId;
     standings.forEach((row) => {
-      if (!stats.has(row.player)) stats.set(row.player, { player: row.player, tournamentWins: 0, totalBallsWon: 0, totalMatches: 0 });
-      const aggregate = stats.get(row.player);
+      if (!stats.has(row.playerId)) {
+        stats.set(row.playerId, { playerId: row.playerId, playerName: row.playerName, tournamentWins: 0, totalBallsWon: 0, totalMatches: 0 });
+      }
+      const aggregate = stats.get(row.playerId);
+      aggregate.playerName = getPlayerName(row.playerId, tournament.data.playerSnapshot || {});
       aggregate.totalBallsWon += row.totalBallsWon;
       aggregate.totalMatches += row.matches;
-      if (row.player === winner) aggregate.tournamentWins += 1;
+      if (row.playerId === winner) aggregate.tournamentWins += 1;
     });
   });
 
@@ -844,7 +957,7 @@ function getAggregateStats() {
   const sortBy = statsSortInput.value;
   if (sortBy === "totalBalls") rows.sort((a, b) => b.totalBallsWon - a.totalBallsWon || b.tournamentWins - a.tournamentWins);
   else if (sortBy === "avgBalls") rows.sort((a, b) => b.avgBallsPerMatch - a.avgBallsPerMatch || b.totalBallsWon - a.totalBallsWon);
-  else rows.sort((a, b) => b.tournamentWins - a.tournamentWins || b.totalBallsWon - a.totalBallsWon);
+  else rows.sort((a, b) => b.tournamentWins - a.tournamentWins || b.totalBallsWon - a.totalBallsWon || a.playerName.localeCompare(b.playerName, "da"));
 
   return rows;
 }
@@ -859,7 +972,7 @@ function renderAggregateStats() {
   table.className = "stats-table";
   table.innerHTML = `<thead><tr><th>Spiller</th><th>Turneringssejre</th><th>Samlet bolde vundet</th><th>Kampe</th><th>Bolde vundet pr. kamp</th></tr></thead><tbody>${rows
     .map(
-      (row, i) => `<tr><td>${i === 0 ? "⭐ " : ""}${row.player}</td><td>${row.tournamentWins}</td><td>${row.totalBallsWon}</td><td>${row.totalMatches}</td><td>${row.avgBallsPerMatch}</td></tr>`
+      (row, i) => `<tr><td>${i === 0 ? "⭐ " : ""}${row.playerName}</td><td>${row.tournamentWins}</td><td>${row.totalBallsWon}</td><td>${row.totalMatches}</td><td>${row.avgBallsPerMatch}</td></tr>`
     )
     .join("")}</tbody>`;
   const tableWrap = document.createElement("div");
@@ -889,7 +1002,7 @@ function renderHistory() {
     const standings = getTournamentStandings(tournament.data);
     const winner = standings[0];
     const li = document.createElement("li");
-    li.innerHTML = `<div><strong>${tournament.name}</strong><br><small>${new Date(tournament.updated_at).toLocaleString("da-DK")}</small><br><small>Vinder: ${winner ? `${winner.player} (${winner.totalBallsWon} bolde)` : "-"}</small></div>`;
+    li.innerHTML = `<div><strong>${tournament.name}</strong><br><small>${new Date(tournament.updated_at).toLocaleString("da-DK")}</small><br><small>Vinder: ${winner ? `${winner.playerName} (${winner.totalBallsWon} bolde)` : "-"}</small></div>`;
     historyList.appendChild(li);
   });
 
@@ -920,6 +1033,7 @@ async function generateMexicanoTournament() {
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
   state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.playerSnapshot = { ...(state.draft.playerSnapshot || {}), ...buildPlayerSnapshot(state.draft.players) };
   if (!validateMexicanoSetup()) return;
   state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
   state.scheduleViewMode = getPreferredScheduleMode();
@@ -936,6 +1050,7 @@ async function addRounds() {
   state.draft.ballsPerRound = Math.max(8, Number(ballsPerRoundInput.value) || 24);
   state.draft.courts = Math.max(1, Number(courtsCountInput.value) || 1);
   state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
+  state.draft.playerSnapshot = { ...(state.draft.playerSnapshot || {}), ...buildPlayerSnapshot(state.draft.players) };
   if (!validateMexicanoSetup()) return;
 
   if (!state.draft.matches.length) {
@@ -961,8 +1076,21 @@ async function completeTournament() {
     if (!shouldComplete) return;
   }
 
+  const unevenParticipation = getUnevenParticipationDetails(state.draft);
+  if (unevenParticipation) {
+    const details = unevenParticipation.entries
+      .sort((a, b) => b.matches - a.matches || a.playerName.localeCompare(b.playerName, "da"))
+      .map((entry) => `${entry.playerName}: ${entry.matches}`)
+      .join("\n");
+    const shouldCompleteUneven = confirm(
+      `Spillerne har ikke spillet lige mange kampe (${unevenParticipation.minMatches}-${unevenParticipation.maxMatches}).\n\n${details}\n\nVil du afslutte turneringen alligevel?`
+    );
+    if (!shouldCompleteUneven) return;
+  }
+
   const payload = {
     players: clone(state.draft.players),
+    playerSnapshot: { ...(state.draft.playerSnapshot || {}), ...buildPlayerSnapshot(state.draft.players) },
     mode: state.draft.mode,
     type: state.draft.type || "classic",
     ballsPerRound: state.draft.ballsPerRound,
@@ -1002,12 +1130,13 @@ playerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!requireAdminAccess()) return;
   if (isDraftLockedForPlayerChanges()) return alert("Spillerlisten kan ikke ændres efter turneringen er startet.");
-  const selectedName = savedPlayerSelect.value.trim();
-  if (!selectedName) return alert("Vælg en spiller fra databasen.");
-  if (state.draft.players.includes(selectedName)) return alert("Spilleren er allerede med i turneringen.");
+  const selectedPlayerId = savedPlayerSelect.value.trim();
+  if (!selectedPlayerId) return alert("Vælg en spiller fra databasen.");
+  if (state.draft.players.includes(selectedPlayerId)) return alert("Spilleren er allerede med i turneringen.");
   if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
 
-  state.draft.players.push(selectedName);
+  state.draft.players.push(selectedPlayerId);
+  state.draft.playerSnapshot[selectedPlayerId] = getPlayerName(selectedPlayerId);
   savedPlayerSelect.value = "";
   renderPlayers();
   updateRoundsHint();
@@ -1045,9 +1174,18 @@ fullViewBtn?.addEventListener("click", () => {
 
 (async function init() {
   await hydrateRemoteStorage();
-  state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []);
-  state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []);
+  state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
+    if (typeof player === "string") return { id: crypto.randomUUID(), name: player };
+    return { id: player.id || crypto.randomUUID(), name: String(player.name || "").trim() };
+  }).filter((player) => player.name);
+  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+
+  state.tournaments = loadFromStorage(STORAGE_KEYS.tournaments, []).map((tournament) => ({
+    ...tournament,
+    data: migrateTournamentData(tournament.data || {})
+  }));
   state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
+  state.draft = migrateTournamentData({ ...state.draft, players: state.draft.players || [], matches: state.draft.matches || [] });
   if (!["full", "focus"].includes(state.scheduleViewMode)) state.scheduleViewMode = "full";
   syncDraftPlayersWithDatabase();
   if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
