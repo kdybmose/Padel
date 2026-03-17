@@ -559,11 +559,6 @@ function buildRoundPackage(players, mode, courts, startingRound = 1) {
 
 function getRoundEstimation(players, mode, courts, type) {
   if (!players.length) return { totalMatches: 0, totalRounds: 0 };
-  if (type === "nearest") {
-    const playersPerCourt = mode === "double" ? 4 : 2;
-    const totalMatches = Math.floor(players.length / playersPerCourt);
-    return { totalMatches, totalRounds: Math.max(1, Math.ceil(totalMatches / Math.max(1, courts))) };
-  }
   const rawMatches = mode === "double" ? buildDoublesMatches(players) : buildSinglesMatches(players);
   const totalRounds = scheduleMatches(rawMatches, Math.max(1, courts)).reduce((max, m) => Math.max(max, m.round), 0);
   return { totalMatches: rawMatches.length, totalRounds };
@@ -589,16 +584,12 @@ function updateRoundsHint() {
 }
 
 function buildDraftMatches(players, mode, courts, type) {
-  if (type === "nearest") return buildNearestDraftMatches(players, mode, courts);
   return buildRoundPackage(players, mode, courts);
 }
 
 function appendRoundsToDraft() {
   const nextRound = state.draft.matches.reduce((max, m) => Math.max(max, m.round), 0) + 1;
-  const extraMatches =
-    state.draft.type === "nearest"
-      ? buildNearestDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.matches)
-      : buildRoundPackage(state.draft.players, state.draft.mode, state.draft.courts, nextRound);
+  const extraMatches = buildRoundPackage(state.draft.players, state.draft.mode, state.draft.courts, nextRound);
   state.draft.matches.push(...extraMatches);
 }
 
@@ -1052,6 +1043,11 @@ async function addRounds() {
   state.draft.name = tournamentNameInput.value.trim() || `${state.draft.type === "nearest" ? "Rangliste" : "Mexicano"} ${new Date().toLocaleDateString("da-DK")}`;
   state.draft.playerSnapshot = { ...(state.draft.playerSnapshot || {}), ...buildPlayerSnapshot(state.draft.players) };
   if (!validateMexicanoSetup()) return;
+
+  if (state.draft.matches.length && !allResultsEntered()) {
+    alert("Alle runder i den nuværende turnering skal være spillet færdig, før du kan tilføje flere runder.");
+    return;
+  }
 
   if (!state.draft.matches.length) {
     state.draft.matches = buildDraftMatches(state.draft.players, state.draft.mode, state.draft.courts, state.draft.type);
