@@ -22,6 +22,17 @@ const savedPlayerForm = document.getElementById("saved-player-form");
 const savedPlayerInput = document.getElementById("saved-player-input");
 const savedPlayerList = document.getElementById("saved-player-list");
 const savedPlayerEmpty = document.getElementById("saved-player-empty");
+const playerEditorDialog = document.getElementById("player-editor-dialog");
+const playerEditorForm = document.getElementById("player-editor-form");
+const playerEditorCloseBtn = document.getElementById("player-editor-close");
+const editorPlayerIdInput = document.getElementById("editor-player-id");
+const editorPlayerNameInput = document.getElementById("editor-player-name");
+const editorPlayerEmailInput = document.getElementById("editor-player-email");
+const editorPlayerOwnerInput = document.getElementById("editor-player-owner");
+const editorStatsWonInput = document.getElementById("editor-stats-won");
+const editorStatsAgainstInput = document.getElementById("editor-stats-against");
+const editorStatsMatchesInput = document.getElementById("editor-stats-matches");
+const editorStatsWinsInput = document.getElementById("editor-stats-wins");
 const dbInviteForm = document.getElementById("db-invite-form");
 const dbInviteEmailInput = document.getElementById("db-invite-email");
 const dbInviteRoleInput = document.getElementById("db-invite-role");
@@ -1086,23 +1097,7 @@ function renderSavedPlayers() {
     editBtn.disabled = !hasAdminAccess();
     editBtn.addEventListener("click", async () => {
       if (!requireAdminAccess()) return;
-      const nextName = prompt("Nyt spillernavn:", player.name);
-      if (typeof nextName !== "string") return;
-      const trimmedName = nextName.trim();
-      if (!trimmedName) return alert("Navnet må ikke være tomt.");
-      const exists = state.savedPlayers.some((saved) => saved.id !== player.id && saved.name.toLowerCase() === trimmedName.toLowerCase());
-      if (exists) return alert("Der findes allerede en spiller med det navn.");
-
-      player.name = trimmedName;
-      state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
-      state.draft.playerSnapshot[player.id] = trimmedName;
-      saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
-      renderSavedPlayers();
-      renderPlayers();
-      renderSchedule();
-      renderStandings();
-      renderHome();
-      await saveActiveTournament();
+      openPlayerEditor(player.id);
     });
 
     const deleteBtn = document.createElement("button");
@@ -1128,6 +1123,82 @@ function renderSavedPlayers() {
   });
 
   renderSavedPlayerSelector();
+}
+
+function openPlayerEditor(playerId) {
+  if (!playerEditorDialog || !playerEditorForm) return;
+  const player = getPlayerRecordById(playerId);
+  if (!player) return;
+  const stats = normalizePlayerStats(player.stats);
+  editorPlayerIdInput.value = player.id || "";
+  editorPlayerNameInput.value = player.name || "";
+  editorPlayerEmailInput.value = player.linkedEmail || "";
+  editorPlayerOwnerInput.value = player.ownerUserId || "";
+  editorStatsWonInput.value = String(stats.totalBallsWon);
+  editorStatsAgainstInput.value = String(stats.totalBallsAgainst);
+  editorStatsMatchesInput.value = String(stats.totalMatches);
+  editorStatsWinsInput.value = String(stats.totalWins);
+  playerEditorForm.dataset.editingPlayerId = player.id;
+  playerEditorDialog.showModal();
+}
+
+async function handlePlayerEditorSave(event) {
+  event.preventDefault();
+  if (!requireAdminAccess()) return;
+  const editingPlayerId = playerEditorForm?.dataset?.editingPlayerId;
+  if (!editingPlayerId) return;
+  const player = getPlayerRecordById(editingPlayerId);
+  if (!player) return;
+
+  const nextName = editorPlayerNameInput.value.trim();
+  if (!nextName) return alert("Navnet må ikke være tomt.");
+  const nameExists = state.savedPlayers.some((saved) => saved.id !== player.id && saved.name.toLowerCase() === nextName.toLowerCase());
+  if (nameExists) return alert("Der findes allerede en spiller med det navn.");
+
+  const nextId = editorPlayerIdInput.value.trim();
+  if (!nextId) return alert("Spiller-ID må ikke være tomt.");
+  const idExists = state.savedPlayers.some((saved) => saved.id !== player.id && saved.id === nextId);
+  if (idExists) return alert("Der findes allerede en spiller med det ID.");
+
+  const nextEmail = editorPlayerEmailInput.value.trim().toLowerCase();
+  const nextOwner = editorPlayerOwnerInput.value.trim();
+  const nextStats = normalizePlayerStats({
+    totalBallsWon: Number(editorStatsWonInput.value),
+    totalBallsAgainst: Number(editorStatsAgainstInput.value),
+    totalMatches: Number(editorStatsMatchesInput.value),
+    totalWins: Number(editorStatsWinsInput.value)
+  });
+
+  const oldId = player.id;
+  player.id = nextId;
+  player.name = nextName;
+  player.linkedEmail = nextEmail || null;
+  player.ownerUserId = nextOwner || null;
+  player.stats = nextStats;
+
+  if (oldId !== nextId) {
+    state.draft.players = state.draft.players.map((playerId) => (playerId === oldId ? nextId : playerId));
+    state.draft.matches = state.draft.matches.map((match) => ({
+      ...match,
+      teamA: (match.teamA || []).map((playerId) => (playerId === oldId ? nextId : playerId)),
+      teamB: (match.teamB || []).map((playerId) => (playerId === oldId ? nextId : playerId))
+    }));
+    if (state.draft.playerSnapshot?.[oldId]) {
+      state.draft.playerSnapshot[nextId] = state.draft.playerSnapshot[oldId];
+      delete state.draft.playerSnapshot[oldId];
+    }
+  }
+
+  state.draft.playerSnapshot[nextId] = nextName;
+  state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
+  renderSavedPlayers();
+  renderPlayers();
+  renderSchedule();
+  renderStandings();
+  renderHome();
+  playerEditorDialog.close();
+  await saveActiveTournament();
 }
 
 function registerPlayerInDatabase(name, owner = state.currentUser) {
@@ -1659,6 +1730,8 @@ publicSignupForm?.addEventListener("submit", (event) => {
   alert("Tak for din registrering! Spilleren er oprettet i databasen.");
 });
 dbInviteForm?.addEventListener("submit", handleDatabaseInvite);
+playerEditorForm?.addEventListener("submit", handlePlayerEditorSave);
+playerEditorCloseBtn?.addEventListener("click", () => playerEditorDialog?.close());
 
 (async function init() {
   await hydrateRemoteStorage();

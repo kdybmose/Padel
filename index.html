@@ -128,6 +128,51 @@
           </section>
         </section>
 
+        <dialog id="player-editor-dialog" class="player-editor-dialog">
+          <form id="player-editor-form" method="dialog" class="player-editor-form">
+            <h3>Redigér spiller i databasen</h3>
+            <p class="muted">Her kan du se og redigere alle felter på spilleren.</p>
+            <label>
+              Spiller-ID
+              <input id="editor-player-id" type="text" required />
+            </label>
+            <label>
+              Navn
+              <input id="editor-player-name" type="text" maxlength="30" required />
+            </label>
+            <label>
+              E-mail
+              <input id="editor-player-email" type="email" placeholder="tom = ingen e-mail" />
+            </label>
+            <label>
+              Ejer bruger-ID
+              <input id="editor-player-owner" type="text" placeholder="tom = ingen ejer" />
+            </label>
+            <div class="row stacked-mobile">
+              <label>
+                Bolde vundet
+                <input id="editor-stats-won" type="number" min="0" value="0" required />
+              </label>
+              <label>
+                Bolde imod
+                <input id="editor-stats-against" type="number" min="0" value="0" required />
+              </label>
+              <label>
+                Kampe spillet
+                <input id="editor-stats-matches" type="number" min="0" value="0" required />
+              </label>
+              <label>
+                Sejre
+                <input id="editor-stats-wins" type="number" min="0" value="0" required />
+              </label>
+            </div>
+            <div class="row">
+              <button type="submit" value="save" class="primary">Gem ændringer</button>
+              <button id="player-editor-close" type="button">Luk</button>
+            </div>
+          </form>
+        </dialog>
+
         <section id="current-view">
           <section class="card">
             <h2>Nuværende turnering</h2>
