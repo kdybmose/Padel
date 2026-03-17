@@ -5,6 +5,7 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 ## Funktioner
 
 - UI uden bruger-login (lokal admin-PIN i klienten)
+- Offentlig spiller-registrering direkte på siden (opretter spiller i spillerdatabasen)
 - Database-regler for invitation-baseret adgang via Supabase Auth
 - Spillerdatabase
 - Single-bane og double-bane Mexicano
