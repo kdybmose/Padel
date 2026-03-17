@@ -22,6 +22,9 @@ const savedPlayerForm = document.getElementById("saved-player-form");
 const savedPlayerInput = document.getElementById("saved-player-input");
 const savedPlayerList = document.getElementById("saved-player-list");
 const savedPlayerEmpty = document.getElementById("saved-player-empty");
+const dbInviteForm = document.getElementById("db-invite-form");
+const dbInviteEmailInput = document.getElementById("db-invite-email");
+const dbInviteRoleInput = document.getElementById("db-invite-role");
 const savedPlayerSelect = document.getElementById("saved-player-select");
 
 const playerForm = document.getElementById("player-form");
@@ -55,8 +58,11 @@ const standingsEmpty = document.getElementById("standings-empty");
 const aggregateRoot = document.getElementById("aggregate");
 const aggregateEmpty = document.getElementById("aggregate-empty");
 const statsSortInput = document.getElementById("stats-sort");
+const publicSignupCard = document.getElementById("public-signup-card");
 const publicSignupForm = document.getElementById("public-signup-form");
 const publicSignupNameInput = document.getElementById("public-signup-name");
+const roundActions = document.getElementById("round-actions");
+const mobileActionBar = document.getElementById("mobile-action-bar");
 const adminAccessBtn = document.getElementById("admin-access-btn");
 const adminAccessStatus = document.getElementById("admin-access-status");
 
@@ -365,22 +371,24 @@ function updateRoundActionButtons() {
 }
 
 function setActiveView(view) {
-  state.activeView = view;
+  const requestedView = view === "players" && !hasAdminAccess() ? "home" : view;
+  state.activeView = requestedView;
 
-  setVisible(homeView, view === "home");
-  setVisible(currentView, view === "current");
-  setVisible(playersView, view === "players");
+  setVisible(homeView, requestedView === "home");
+  setVisible(currentView, requestedView === "current");
+  setVisible(playersView, requestedView === "players" && hasAdminAccess());
 
   const tabs = [
-    [homeTab, view === "home"],
-    [currentTab, view === "current"],
-    [playersTab, view === "players"],
-    [mobileHomeTab, view === "home"],
-    [mobileCurrentTab, view === "current"],
-    [mobilePlayersTab, view === "players"]
+    [homeTab, requestedView === "home"],
+    [currentTab, requestedView === "current"],
+    [playersTab, requestedView === "players"],
+    [mobileHomeTab, requestedView === "home"],
+    [mobileCurrentTab, requestedView === "current"],
+    [mobilePlayersTab, requestedView === "players"]
   ];
 
   tabs.forEach(([tab, isActive]) => {
+    if (!tab) return;
     tab.classList.toggle("primary", isActive);
     tab.setAttribute("aria-pressed", String(isActive));
   });
@@ -1036,7 +1044,7 @@ function renderPlayers() {
       renderHome();
       await saveActiveTournament();
     });
-    li.appendChild(removeBtn);
+    if (hasAdminAccess()) li.appendChild(removeBtn);
     playerList.appendChild(li);
   });
 
@@ -1408,6 +1416,21 @@ function setAuthenticatedUi(isAuthenticated) {
   if (adminAccessCard) setVisible(adminAccessCard, isAuthenticated);
 }
 
+function updateRoleBasedUi() {
+  const admin = hasAdminAccess();
+  setVisible(playersTab, admin);
+  setVisible(mobilePlayersTab, admin);
+  setVisible(playersView, admin && state.activeView === "players");
+  setVisible(adminAccessBtn, admin);
+  setVisible(playerForm, admin);
+  setVisible(roundActions, admin);
+  setVisible(completeBtn, admin);
+  setVisible(mobileActionBar, admin);
+  setVisible(savedPlayerForm, admin);
+  setVisible(dbInviteForm, admin);
+  setVisible(publicSignupCard, !admin);
+}
+
 function ensureDefaultAdminPlayer() {
   const adminName = "Kristian Dybmose";
   if (state.savedPlayers.some((player) => player.name.toLowerCase() === adminName.toLowerCase())) return;
@@ -1489,6 +1512,7 @@ async function handleLogout() {
   await clearActiveTournament();
   setAuthenticatedUi(false);
   updateAdminAccessUi();
+  updateRoleBasedUi();
   renderSavedPlayers();
   renderPlayers();
   renderSchedule();
@@ -1528,6 +1552,7 @@ async function initializeAppForUser(user) {
   setAuthenticatedUi(true);
   setActiveView("home");
   updateAdminAccessUi();
+  updateRoleBasedUi();
   setEditingEnabled(hasAdminAccess());
   updateDraftInputs();
   renderSavedPlayers();
@@ -1549,24 +1574,12 @@ savedPlayerForm.addEventListener("submit", (event) => {
   savedPlayerForm.reset();
 });
 
-publicSignupForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const result = registerPlayerInDatabase(publicSignupNameInput?.value);
-  if (result.reason === "empty") return;
-  if (result.reason === "exists") {
-    alert("Spilleren findes allerede i databasen.");
-    return;
-  }
-  publicSignupForm.reset();
-  alert("Tak for din registrering! Spilleren er oprettet i databasen.");
-});
 
-playerForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+
+async function addSelectedPlayerToDraft(selectedPlayerId) {
   if (!requireAdminAccess()) return;
   if (isDraftLockedForPlayerChanges()) return alert("Spillerlisten kan ikke ændres efter turneringen er startet.");
-  const selectedPlayerId = savedPlayerSelect.value.trim();
-  if (!selectedPlayerId) return alert("Vælg en spiller fra databasen.");
+  if (!selectedPlayerId) return;
   if (state.draft.players.includes(selectedPlayerId)) return alert("Spilleren er allerede med i turneringen.");
   if (state.draft.players.length >= 40) return alert("Der kan maks være 40 spillere i en turnering.");
 
@@ -1576,6 +1589,41 @@ playerForm.addEventListener("submit", async (event) => {
   renderPlayers();
   updateRoundsHint();
   await saveActiveTournament();
+}
+
+async function handleDatabaseInvite(event) {
+  event.preventDefault();
+  if (!requireAdminAccess()) return;
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+  if (!client || !config) return alert("Supabase er ikke konfigureret.");
+
+  const email = dbInviteEmailInput.value.trim().toLowerCase();
+  const role = dbInviteRoleInput.value;
+  const { data: sessionData } = await client.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) return alert("Din session er udløbet. Log ind igen.");
+
+  const response = await fetch(`${config.url}/functions/v1/invite-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: config.anonKey,
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ email, role })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return alert(payload?.error || "Invitation kunne ikke sendes.");
+
+  dbInviteForm.reset();
+  alert(`Invitation sendt til ${email}.`);
+}
+
+playerForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await addSelectedPlayerToDraft(savedPlayerSelect.value.trim());
 });
 
 generateBtn.addEventListener("click", generateMexicanoTournament);
@@ -1599,12 +1647,25 @@ loginForm?.addEventListener("submit", handleLogin);
 registerForm?.addEventListener("submit", handleRegister);
 forgotPasswordBtn?.addEventListener("click", handleForgotPassword);
 logoutBtn?.addEventListener("click", handleLogout);
+savedPlayerSelect?.addEventListener("change", async () => {
+  await addSelectedPlayerToDraft(savedPlayerSelect.value.trim());
+});
+publicSignupForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const result = registerPlayerInDatabase(publicSignupNameInput?.value);
+  if (result.reason === "empty") return;
+  if (result.reason === "exists") return alert("Spilleren findes allerede i databasen.");
+  publicSignupForm.reset();
+  alert("Tak for din registrering! Spilleren er oprettet i databasen.");
+});
+dbInviteForm?.addEventListener("submit", handleDatabaseInvite);
 
 (async function init() {
   await hydrateRemoteStorage();
   setVisible(adminCard, false);
   setVisible(adminPlayerCard, false);
   setAuthenticatedUi(false);
+  updateRoleBasedUi();
   setAuthStatus("Log ind for at åbne appen.");
 
   const client = getSupabaseClient();
