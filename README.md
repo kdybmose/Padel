@@ -5,7 +5,7 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 ## Funktioner
 
 - Login-side ved første åbning (Supabase Auth) med login, registrering og glemt adgangskode
-- Kun admin kan oprette spillere og invitere brugere via spillerdatabasen
+- Nye brugere kan sende en spilleranmodning, som admin godkender i spillerdatabasen
 - Kristian Dybmose (dybmose@hotmail.com) er eneste admin
 - Spillerdatabase
 - Single-bane og double-bane Mexicano
@@ -25,7 +25,7 @@ window.SUPABASE_ANON_KEY = "YOUR_PUBLISHABLE_KEY";
 Bemærk:
 
 - Redigering af turneringer/spillere gives kun til admin-brugeren `dybmose@hotmail.com`.
-- Nye login-brugere kan oprette konto selv, men spillerprofiler i databasen oprettes kun af admin.
+- Nye login-brugere kan oprette konto selv og sender derefter en spilleranmodning til admin, som kan godkende eller afvise den i spillerdatabasen.
 - Bekræftelses- og invitationsmails sendes tilbage til den aktuelle app-URL. Den URL skal også være tilladt under Supabase Auth -> URL Configuration.
 
 ## Supabase migrationer

@@ -44,6 +44,18 @@ button:hover { filter: brightness(0.98); }
 
 .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .actions input { min-width: 220px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: #fff1f1;
+  color: #b42318;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
 .view-tabs { display: flex; gap: 0.5rem; }
 .muted { color: var(--muted); }
 .hidden { display: none !important; }

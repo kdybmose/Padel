@@ -22,6 +22,10 @@ const savedPlayerForm = document.getElementById("saved-player-form");
 const savedPlayerInput = document.getElementById("saved-player-input");
 const savedPlayerList = document.getElementById("saved-player-list");
 const savedPlayerEmpty = document.getElementById("saved-player-empty");
+const pendingPlayerApprovalsCard = document.getElementById("pending-player-approvals-card");
+const pendingPlayerApprovalsCount = document.getElementById("pending-player-approvals-count");
+const pendingPlayerApprovalsList = document.getElementById("pending-player-approvals-list");
+const pendingPlayerApprovalsEmpty = document.getElementById("pending-player-approvals-empty");
 const playerEditorDialog = document.getElementById("player-editor-dialog");
 const playerEditorForm = document.getElementById("player-editor-form");
 const playerEditorCloseBtn = document.getElementById("player-editor-close");
@@ -83,6 +87,9 @@ const STORAGE_KEYS = {
   savedPlayers: "padel_saved_players",
   draft: "padel_active_draft"
 };
+const GLOBAL_STORAGE_KEYS = {
+  pendingPlayerApprovals: "global_pending_player_approvals"
+};
 
 const REMOTE_STATE_ROW_ID = "public";
 const REMOTE_STATE_TABLE = "app_state";
@@ -93,6 +100,7 @@ let isPersisting = false;
 
 const state = {
   savedPlayers: [],
+  pendingPlayerApprovals: [],
   activeView: "home",
   currentUser: null,
   isAdminUser: false,
@@ -268,6 +276,29 @@ function loadFromStorage(key, fallback) {
   return fallback;
 }
 
+function saveGlobalStorage(key, data) {
+  remoteStorage[key] = clone(data);
+  writeLocalStorage(key, data);
+  queueRemotePersist();
+}
+
+function loadGlobalStorage(key, fallback) {
+  if (key in remoteStorage) return clone(remoteStorage[key]);
+  return fallback;
+}
+
+function getAllStoredPlayers() {
+  return Object.entries(remoteStorage)
+    .filter(([key]) => key.endsWith(`_${STORAGE_KEYS.savedPlayers}`))
+    .flatMap(([, players]) => (Array.isArray(players) ? players : []))
+    .map((player) => ({
+      ...player,
+      name: String(player?.name || "").trim(),
+      linkedEmail: String(player?.linkedEmail || "").trim().toLowerCase()
+    }))
+    .filter((player) => player.name);
+}
+
 function getConfiguredAdminPin() {
   if (window.PADEL_ADMIN_PIN === undefined || window.PADEL_ADMIN_PIN === null) return "";
   return String(window.PADEL_ADMIN_PIN).trim();
@@ -300,6 +331,131 @@ function requireAdminAccess() {
   if (hasAdminAccess()) return true;
   alert("Kun Kristian Dybmose (admin) har adgang til denne handling.");
   return false;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("da-DK", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }).format(date);
+}
+
+function normalizePendingPlayerApproval(request = {}) {
+  const normalizedName = String(request.name || "").trim();
+  const normalizedEmail = String(request.email || "").trim().toLowerCase();
+  if (!normalizedName || !normalizedEmail) return null;
+  return {
+    id: request.id || crypto.randomUUID(),
+    userId: request.userId || null,
+    name: normalizedName,
+    email: normalizedEmail,
+    requestedAt: request.requestedAt || new Date().toISOString()
+  };
+}
+
+function savePendingPlayerApprovals() {
+  state.pendingPlayerApprovals = state.pendingPlayerApprovals
+    .map(normalizePendingPlayerApproval)
+    .filter(Boolean)
+    .sort((a, b) => String(a.requestedAt || "").localeCompare(String(b.requestedAt || "")));
+  saveGlobalStorage(GLOBAL_STORAGE_KEYS.pendingPlayerApprovals, state.pendingPlayerApprovals);
+}
+
+async function refreshPendingPlayerApprovalsFromRemote() {
+  await hydrateRemoteStorage();
+  state.pendingPlayerApprovals = loadGlobalStorage(GLOBAL_STORAGE_KEYS.pendingPlayerApprovals, [])
+    .map(normalizePendingPlayerApproval)
+    .filter(Boolean);
+  renderPendingPlayerApprovals();
+}
+
+function createPendingPlayerApproval({ userId, name, email }) {
+  const normalizedRequest = normalizePendingPlayerApproval({ userId, name, email });
+  if (!normalizedRequest) return { ok: false, reason: "invalid" };
+
+  const duplicateRequest = state.pendingPlayerApprovals.find(
+    (request) => request.email === normalizedRequest.email || request.name.toLowerCase() === normalizedRequest.name.toLowerCase()
+  );
+  if (duplicateRequest) return { ok: false, reason: "pending" };
+
+  const duplicatePlayer = [...state.savedPlayers, ...getAllStoredPlayers()].find(
+    (player) => String(player.linkedEmail || "").toLowerCase() === normalizedRequest.email || player.name.toLowerCase() === normalizedRequest.name.toLowerCase()
+  );
+  if (duplicatePlayer) return { ok: false, reason: "exists" };
+
+  state.pendingPlayerApprovals.push(normalizedRequest);
+  savePendingPlayerApprovals();
+  return { ok: true, request: normalizedRequest };
+}
+
+function removePendingPlayerApproval(requestId) {
+  state.pendingPlayerApprovals = state.pendingPlayerApprovals.filter((request) => request.id !== requestId);
+  savePendingPlayerApprovals();
+}
+
+function renderPendingPlayerApprovals() {
+  if (!pendingPlayerApprovalsCard || !pendingPlayerApprovalsList || !pendingPlayerApprovalsEmpty || !pendingPlayerApprovalsCount) return;
+  const admin = hasAdminAccess();
+  setVisible(pendingPlayerApprovalsCard, admin);
+  pendingPlayerApprovalsList.innerHTML = "";
+
+  const pendingCount = state.pendingPlayerApprovals.length;
+  pendingPlayerApprovalsCount.textContent = String(pendingCount);
+  setVisible(pendingPlayerApprovalsCount, pendingCount > 0);
+  setVisible(pendingPlayerApprovalsEmpty, pendingCount === 0);
+
+  if (!admin) return;
+
+  state.pendingPlayerApprovals.forEach((request) => {
+    const li = document.createElement("li");
+    const meta = document.createElement("div");
+    meta.innerHTML = `<strong>${request.name}</strong><div class="muted">${request.email}${request.requestedAt ? ` · anmodet ${formatDateTime(request.requestedAt)}` : ""}</div>`;
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const approveBtn = document.createElement("button");
+    approveBtn.type = "button";
+    approveBtn.className = "primary";
+    approveBtn.textContent = "Godkend";
+    approveBtn.addEventListener("click", async () => {
+      if (!requireAdminAccess()) return;
+      const result = registerPlayerInDatabase(request.name, {
+        id: request.userId,
+        email: request.email
+      });
+      if (result.reason === "exists") {
+        alert("Spilleren findes allerede i databasen.");
+        removePendingPlayerApproval(request.id);
+        renderPendingPlayerApprovals();
+        return;
+      }
+      if (!result.ok) {
+        alert("Kunne ikke godkende spilleranmodningen.");
+        return;
+      }
+      removePendingPlayerApproval(request.id);
+      renderPendingPlayerApprovals();
+      alert(`${request.name} er godkendt og oprettet i spillerdatabasen.`);
+    });
+
+    const rejectBtn = document.createElement("button");
+    rejectBtn.type = "button";
+    rejectBtn.textContent = "Afvis";
+    rejectBtn.addEventListener("click", () => {
+      if (!requireAdminAccess()) return;
+      removePendingPlayerApproval(request.id);
+      renderPendingPlayerApprovals();
+      alert(`Spilleranmodningen fra ${request.name} er afvist.`);
+    });
+
+    actions.append(approveBtn, rejectBtn);
+    li.append(meta, actions);
+    pendingPlayerApprovalsList.appendChild(li);
+  });
 }
 
 function setEditingEnabled(enabled) {
@@ -1062,6 +1218,7 @@ function renderSavedPlayers() {
   setEditingEnabled(hasAdminAccess());
   savedPlayerList.innerHTML = "";
   setVisible(savedPlayerEmpty, state.savedPlayers.length === 0);
+  renderPendingPlayerApprovals();
 
   state.savedPlayers.forEach((player) => {
     const li = document.createElement("li");
@@ -1496,6 +1653,7 @@ function updateRoleBasedUi() {
   setVisible(savedPlayerForm, admin);
   setVisible(dbInviteForm, admin);
   setVisible(publicSignupCard, admin);
+  renderPendingPlayerApprovals();
 }
 
 function ensureDefaultAdminPlayer() {
@@ -1549,10 +1707,25 @@ async function handleRegister(event) {
   const createdUser = data.user;
   if (createdUser) {
     await initializeAppForUser(createdUser);
+    const requestResult = createPendingPlayerApproval({
+      userId: createdUser.id,
+      name: name || email,
+      email
+    });
+    if (requestResult.reason === "exists") {
+      setAuthStatus("Din konto er oprettet, og du har allerede en spillerprofil.", false);
+      registerForm.reset();
+      return;
+    }
+    if (requestResult.reason === "pending") {
+      setAuthStatus("Din konto er oprettet. Din spilleranmodning afventer allerede godkendelse fra admin.", false);
+      registerForm.reset();
+      return;
+    }
   }
 
   registerForm.reset();
-  setAuthStatus("Registrering gennemført. Du er nu logget ind.");
+  setAuthStatus("Registrering gennemført. Din spilleranmodning er sendt til admin til godkendelse.");
 }
 
 async function handleForgotPassword() {
@@ -1590,6 +1763,9 @@ async function handleLogout() {
 async function initializeAppForUser(user) {
   state.currentUser = user;
   state.isAdminUser = isKristianAdmin(user?.email);
+  state.pendingPlayerApprovals = loadGlobalStorage(GLOBAL_STORAGE_KEYS.pendingPlayerApprovals, [])
+    .map(normalizePendingPlayerApproval)
+    .filter(Boolean);
 
   state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
     if (typeof player === "string") return { id: crypto.randomUUID(), name: player, stats: getDefaultPlayerStats(), ownerUserId: user?.id || null, linkedEmail: user?.email || null };
@@ -1627,6 +1803,7 @@ async function initializeAppForUser(user) {
   renderSchedule();
   renderStandings();
   renderHome();
+  if (state.isAdminUser) await refreshPendingPlayerApprovalsFromRemote();
 }
 
 savedPlayerForm.addEventListener("submit", (event) => {
@@ -1702,10 +1879,16 @@ addRoundBtn.addEventListener("click", addRounds);
 completeBtn.addEventListener("click", completeTournament);
 homeTab.addEventListener("click", () => setActiveView("home"));
 currentTab.addEventListener("click", () => setActiveView("current"));
-playersTab.addEventListener("click", () => setActiveView("players"));
+playersTab.addEventListener("click", async () => {
+  setActiveView("players");
+  if (hasAdminAccess()) await refreshPendingPlayerApprovalsFromRemote();
+});
 mobileHomeTab.addEventListener("click", () => setActiveView("home"));
 mobileCurrentTab.addEventListener("click", () => setActiveView("current"));
-mobilePlayersTab.addEventListener("click", () => setActiveView("players"));
+mobilePlayersTab.addEventListener("click", async () => {
+  setActiveView("players");
+  if (hasAdminAccess()) await refreshPendingPlayerApprovalsFromRemote();
+});
 mobileGenerateBtn.addEventListener("click", generateMexicanoTournament);
 mobileAddRoundBtn.addEventListener("click", addRounds);
 mobileCompleteBtn.addEventListener("click", completeTournament);
@@ -1736,6 +1919,9 @@ playerEditorCloseBtn?.addEventListener("click", () => playerEditorDialog?.close(
 
 (async function init() {
   await hydrateRemoteStorage();
+  state.pendingPlayerApprovals = loadGlobalStorage(GLOBAL_STORAGE_KEYS.pendingPlayerApprovals, [])
+    .map(normalizePendingPlayerApproval)
+    .filter(Boolean);
   setVisible(adminCard, false);
   setVisible(adminPlayerCard, false);
   setAuthenticatedUi(false);
