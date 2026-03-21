@@ -11,6 +11,7 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 - Single-bane og double-bane Mexicano
 - Klassisk eller rangliste-turnering
 - Aktiv turnering + historik gemmes i Supabase (`public.app_state`)
+- Browseren bruges ikke som lokal backup for spillerdata eller aktiv turnering
 
 ## Konfiguration
 
