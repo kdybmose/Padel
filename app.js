@@ -155,6 +155,11 @@ function getSupabaseClient() {
   return window.supabase.createClient(config.url, config.anonKey);
 }
 
+function getAuthRedirectUrl() {
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname}`;
+}
+
 function getStorageScope() {
   if (!state.currentUser?.id) return "anon";
   return `user_${state.currentUser.id}`;
@@ -1534,7 +1539,10 @@ async function handleRegister(event) {
   const { data, error } = await client.auth.signUp({
     email,
     password,
-    options: { data: { full_name: name } }
+    options: {
+      data: { full_name: name },
+      emailRedirectTo: getAuthRedirectUrl()
+    }
   });
   if (error) return setAuthStatus(`Registrering fejlede: ${error.message}`, true);
 
@@ -1673,7 +1681,11 @@ async function handleDatabaseInvite(event) {
       apikey: config.anonKey,
       Authorization: `Bearer ${token}`
     },
-    body: JSON.stringify({ email, role })
+    body: JSON.stringify({
+      email,
+      role,
+      redirectTo: getAuthRedirectUrl()
+    })
   });
 
   const payload = await response.json().catch(() => ({}));
