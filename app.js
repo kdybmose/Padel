@@ -240,21 +240,14 @@ function getLocalStorageKey(key) {
 
 function writeLocalStorage(key, data) {
   try {
-    window.localStorage.setItem(getLocalStorageKey(key), JSON.stringify(data));
+    window.localStorage.removeItem(getLocalStorageKey(key));
   } catch (error) {
-    console.warn("Kunne ikke gemme data lokalt:", error);
+    console.warn("Kunne ikke rydde lokal data:", error);
   }
 }
 
 function readLocalStorage(key) {
-  try {
-    const value = window.localStorage.getItem(getLocalStorageKey(key));
-    if (!value) return undefined;
-    return JSON.parse(value);
-  } catch (error) {
-    console.warn("Kunne ikke læse lokal data:", error);
-    return undefined;
-  }
+  return undefined;
 }
 
 function saveToStorage(key, data) {
@@ -267,8 +260,6 @@ function saveToStorage(key, data) {
 function loadFromStorage(key, fallback) {
   const scopedKey = getScopedStorageKey(key);
   if (scopedKey in remoteStorage) return clone(remoteStorage[scopedKey]);
-  const localData = readLocalStorage(scopedKey);
-  if (localData !== undefined) return clone(localData);
   return fallback;
 }
 
