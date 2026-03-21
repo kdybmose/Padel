@@ -1495,7 +1495,7 @@ function updateRoleBasedUi() {
   setVisible(mobileActionBar, admin);
   setVisible(savedPlayerForm, admin);
   setVisible(dbInviteForm, admin);
-  setVisible(publicSignupCard, !admin);
+  setVisible(publicSignupCard, admin);
 }
 
 function ensureDefaultAdminPlayer() {
@@ -1549,9 +1549,6 @@ async function handleRegister(event) {
   const createdUser = data.user;
   if (createdUser) {
     await initializeAppForUser(createdUser);
-    if (!state.savedPlayers.some((player) => String(player.linkedEmail || "").toLowerCase() === email)) {
-      registerPlayerInDatabase(name || email, createdUser);
-    }
   }
 
   registerForm.reset();
@@ -1726,6 +1723,7 @@ savedPlayerSelect?.addEventListener("change", async () => {
 });
 publicSignupForm?.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (!requireAdminAccess()) return;
   const result = registerPlayerInDatabase(publicSignupNameInput?.value);
   if (result.reason === "empty") return;
   if (result.reason === "exists") return alert("Spilleren findes allerede i databasen.");
