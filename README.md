@@ -26,6 +26,7 @@ Bemærk:
 
 - Redigering af turneringer/spillere gives kun til admin-brugeren `dybmose@hotmail.com`.
 - Nye brugere kan registrere sig selv eller inviteres af admin (Supabase invite).
+- Bekræftelses- og invitationsmails sendes tilbage til den aktuelle app-URL. Den URL skal også være tilladt under Supabase Auth -> URL Configuration.
 
 ## Supabase migrationer
 

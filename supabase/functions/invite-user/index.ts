@@ -39,15 +39,17 @@ Deno.serve(async (req) => {
     if (profileError) throw profileError;
     if (profile.role !== "admin") throw new Error("Kun admin kan sende invitationer");
 
-    const { email, role } = await req.json();
+    const { email, role, redirectTo } = await req.json();
     if (!email || !["admin", "user"].includes(role)) {
       throw new Error("Ugyldig payload");
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedRedirectTo = typeof redirectTo === "string" && redirectTo.trim() ? redirectTo.trim() : undefined;
 
     const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(normalizedEmail, {
-      data: { role }
+      data: { role },
+      redirectTo: normalizedRedirectTo
     });
     if (inviteError) throw inviteError;
 
