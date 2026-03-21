@@ -10,7 +10,7 @@
     <main class="container">
       <section id="auth-card" class="card" aria-label="Log ind eller registrér">
         <h2>Log ind</h2>
-        <p class="muted">Log ind med din bruger. Nye spillere kan registrere sig selv eller inviteres af admin.</p>
+        <p class="muted">Log ind med din bruger. Nye spillere kan oprette konto selv og sende en spilleranmodning til admin.</p>
         <form id="login-form" class="row stacked-mobile" method="post">
           <input id="auth-email" type="email" placeholder="E-mail" required />
           <input id="auth-password" type="password" placeholder="Adgangskode" required />
@@ -78,9 +78,9 @@
         </section>
 
         <section id="home-view">
-          <section id="public-signup-card" class="card">
+          <section id="public-signup-card" class="card hidden">
             <h2>Spiller-registrering</h2>
-            <p class="muted">Nye spillere kan registrere sig her og bliver oprettet i spillerdatabasen.</p>
+            <p class="muted">Kun admin kan oprette nye spillere i spillerdatabasen.</p>
             <form id="public-signup-form" class="row" method="post">
               <input id="public-signup-name" type="text" placeholder="Dit navn" maxlength="30" required />
               <button type="submit">Registrér spiller</button>
@@ -108,6 +108,13 @@
         </section>
 
         <section id="players-view" class="hidden">
+          <section id="pending-player-approvals-card" class="card hidden">
+            <h2>Spilleranmodninger <span id="pending-player-approvals-count" class="pill hidden">0</span></h2>
+            <p class="muted">Nye brugere lander her, indtil admin godkender eller afviser dem.</p>
+            <ul id="pending-player-approvals-list" class="simple-list"></ul>
+            <div id="pending-player-approvals-empty" class="muted">Ingen nye spilleranmodninger.</div>
+          </section>
+
           <section class="card">
             <h2>Spillerdatabase</h2>
             <p class="muted">Tilføj, redigér og slet spillere her. Du kan kun vælge spillere til turneringer fra denne liste.</p>
