@@ -163,6 +163,125 @@ function getSupabaseClient() {
   return window.supabase.createClient(config.url, config.anonKey);
 }
 
+function getAdminPlayerOwnerId() {
+  return state.currentUser?.id || null;
+}
+
+function normalizeDatabasePlayer(row = {}) {
+  return {
+    id: row.id || crypto.randomUUID(),
+    name: String(row.name || '').trim(),
+    stats: normalizePlayerStats({
+      totalBallsWon: row.total_balls_won,
+      totalBallsAgainst: row.total_balls_against,
+      totalMatches: row.total_matches,
+      totalWins: row.total_wins
+    }),
+    ownerUserId: row.owner_id || null,
+    linkedEmail: row.linked_email || null
+  };
+}
+
+async function fetchPlayersFromDatabase() {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser) return [];
+  const { data, error } = await client
+    .from('players')
+    .select('id, owner_id, name, linked_email, total_balls_won, total_balls_against, total_matches, total_wins')
+    .order('name', { ascending: true });
+  if (error) {
+    console.warn('Kunne ikke hente spillere fra databasen:', error);
+    return [];
+  }
+  return (data || []).map(normalizeDatabasePlayer).filter((player) => player.name);
+}
+
+async function savePlayerToDatabase(player) {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser) return false;
+  const stats = normalizePlayerStats(player.stats);
+  const payload = {
+    id: player.id,
+    owner_id: player.ownerUserId || getAdminPlayerOwnerId(),
+    name: player.name,
+    linked_email: player.linkedEmail || null,
+    total_balls_won: stats.totalBallsWon,
+    total_balls_against: stats.totalBallsAgainst,
+    total_matches: stats.totalMatches,
+    total_wins: stats.totalWins
+  };
+  payload['linked_email'] = player.linkedEmail || null;
+  const { error } = await client.from('players').upsert(payload);
+  if (error) {
+    console.warn('Kunne ikke gemme spiller i databasen:', error);
+    return false;
+  }
+  return true;
+}
+
+async function deletePlayerFromDatabase(playerId) {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser) return false;
+  const { error } = await client.from('players').delete().eq('id', playerId);
+  if (error) {
+    console.warn('Kunne ikke slette spiller fra databasen:', error);
+    return false;
+  }
+  return true;
+}
+
+async function loadActiveTournamentFromDatabase() {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser || !hasAdminAccess()) return null;
+  const { data, error } = await client.from('active_tournaments').select('data').eq('owner_id', state.currentUser.id).maybeSingle();
+  if (error) {
+    console.warn('Kunne ikke hente aktiv turnering fra databasen:', error);
+    return null;
+  }
+  return data?.data ? migrateTournamentData(data.data) : null;
+}
+
+async function persistActiveTournamentToDatabase(draft) {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser || !hasAdminAccess()) return false;
+  const { error } = await client.from('active_tournaments').upsert({
+    owner_id: state.currentUser.id,
+    name: draft.name || 'Aktiv turnering',
+    data: draft
+  });
+  if (error) {
+    console.warn('Kunne ikke gemme aktiv turnering i databasen:', error);
+    return false;
+  }
+  return true;
+}
+
+async function clearActiveTournamentFromDatabase() {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser || !hasAdminAccess()) return false;
+  const { error } = await client.from('active_tournaments').delete().eq('owner_id', state.currentUser.id);
+  if (error) {
+    console.warn('Kunne ikke rydde aktiv turnering i databasen:', error);
+    return false;
+  }
+  return true;
+}
+
+async function saveCompletedTournamentToDatabase(tournament) {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser || !hasAdminAccess()) return false;
+  const { error } = await client.from('tournaments').insert({
+    owner_id: state.currentUser.id,
+    name: tournament.name || 'Mexicano',
+    data: tournament
+  });
+  if (error) {
+    console.warn('Kunne ikke gemme turneringshistorik i databasen:', error);
+    return false;
+  }
+  return true;
+}
+
 function getAuthRedirectUrl() {
   const { origin, pathname } = window.location;
   return `${origin}${pathname}`;
@@ -423,7 +542,7 @@ function renderPendingPlayerApprovals() {
     approveBtn.textContent = "Godkend";
     approveBtn.addEventListener("click", async () => {
       if (!requireAdminAccess()) return;
-      const result = registerPlayerInDatabase(request.name, {
+      const result = await registerPlayerInDatabase(request.name, {
         id: request.userId,
         email: request.email
       });
@@ -568,12 +687,14 @@ function updateDraftInputs() {
 
 async function saveActiveTournament() {
   saveToStorage(STORAGE_KEYS.draft, state.draft);
+  if (hasAdminAccess()) await persistActiveTournamentToDatabase(state.draft);
 }
 
 async function clearActiveTournament() {
   state.draft = { players: [], playerSnapshot: {}, mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
   updateDraftInputs();
   saveToStorage(STORAGE_KEYS.draft, state.draft);
+  if (hasAdminAccess()) await clearActiveTournamentFromDatabase();
 }
 
 function getPairKey(team) {
@@ -1259,6 +1380,8 @@ function renderSavedPlayers() {
     deleteBtn.disabled = !hasAdminAccess();
     deleteBtn.addEventListener("click", async () => {
       if (!requireAdminAccess()) return;
+      const deleted = await deletePlayerFromDatabase(player.id);
+      if (!deleted) return alert('Kunne ikke slette spilleren i databasen.');
       state.savedPlayers = state.savedPlayers.filter((saved) => saved.id !== player.id);
       syncDraftPlayersWithDatabase();
       saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
@@ -1344,6 +1467,8 @@ async function handlePlayerEditorSave(event) {
 
   state.draft.playerSnapshot[nextId] = nextName;
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  const saved = await savePlayerToDatabase(player);
+  if (!saved) return alert('Kunne ikke gemme spilleren i databasen.');
   saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
   renderSavedPlayers();
   renderPlayers();
@@ -1354,7 +1479,7 @@ async function handlePlayerEditorSave(event) {
   await saveActiveTournament();
 }
 
-function registerPlayerInDatabase(name, owner = state.currentUser) {
+async function registerPlayerInDatabase(name, owner = state.currentUser) {
   const trimmedName = String(name || "").trim();
   if (!trimmedName) return { ok: false, reason: "empty" };
 
@@ -1362,14 +1487,20 @@ function registerPlayerInDatabase(name, owner = state.currentUser) {
     return { ok: false, reason: "exists" };
   }
 
-  state.savedPlayers.push({
+  const player = {
     id: crypto.randomUUID(),
     name: trimmedName,
     stats: getDefaultPlayerStats(),
     ownerUserId: owner?.id || null,
     linkedEmail: owner?.email || null
-  });
+  };
+  state.savedPlayers.push(player);
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  const saved = await savePlayerToDatabase(player);
+  if (!saved) {
+    state.savedPlayers = state.savedPlayers.filter((savedPlayer) => savedPlayer.id !== player.id);
+    return { ok: false, reason: 'db' };
+  }
   saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
   renderSavedPlayers();
   renderHome();
@@ -1620,6 +1751,10 @@ async function completeTournament() {
   };
 
   applyCompletedTournamentStats(payload);
+  const historySaved = await saveCompletedTournamentToDatabase(payload);
+  if (!historySaved) return alert('Kunne ikke gemme turneringshistorik i databasen.');
+  const playerSaveResults = await Promise.all(state.savedPlayers.map((player) => savePlayerToDatabase(player)));
+  if (playerSaveResults.some((result) => !result)) return alert('Kunne ikke gemme opdaterede rangliste-data i databasen.');
   saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
 
   await clearActiveTournament();
@@ -1656,17 +1791,19 @@ function updateRoleBasedUi() {
   renderPendingPlayerApprovals();
 }
 
-function ensureDefaultAdminPlayer() {
+async function ensureDefaultAdminPlayer() {
   const adminName = "Kristian Dybmose";
   if (state.savedPlayers.some((player) => player.name.toLowerCase() === adminName.toLowerCase())) return;
-  state.savedPlayers.push({
+  const adminPlayer = {
     id: crypto.randomUUID(),
     name: adminName,
     stats: getDefaultPlayerStats(),
     ownerUserId: null,
     linkedEmail: "dybmose@hotmail.com"
-  });
+  };
+  state.savedPlayers.push(adminPlayer);
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  await savePlayerToDatabase(adminPlayer);
   saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
 }
 
@@ -1749,7 +1886,8 @@ async function handleLogout() {
   state.currentUser = null;
   state.isAdminUser = false;
   state.savedPlayers = [];
-  await clearActiveTournament();
+  state.draft = { players: [], playerSnapshot: {}, mode: "single", type: "classic", ballsPerRound: 24, courts: 1, name: "", matches: [] };
+  saveToStorage(STORAGE_KEYS.draft, state.draft);
   setAuthenticatedUi(false);
   updateAdminAccessUi();
   updateRoleBasedUi();
@@ -1767,26 +1905,26 @@ async function initializeAppForUser(user) {
     .map(normalizePendingPlayerApproval)
     .filter(Boolean);
 
-  state.savedPlayers = loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
-    if (typeof player === "string") return { id: crypto.randomUUID(), name: player, stats: getDefaultPlayerStats(), ownerUserId: user?.id || null, linkedEmail: user?.email || null };
-    return {
-      id: player.id || crypto.randomUUID(),
-      name: String(player.name || "").trim(),
-      stats: normalizePlayerStats(player.stats),
-      ownerUserId: player.ownerUserId || null,
-      linkedEmail: player.linkedEmail || null
-    };
-  }).filter((player) => player.name);
+  const remotePlayers = await fetchPlayersFromDatabase();
+  state.savedPlayers = remotePlayers.length
+    ? remotePlayers
+    : loadFromStorage(STORAGE_KEYS.savedPlayers, []).map((player) => {
+        if (typeof player === "string") return { id: crypto.randomUUID(), name: player, stats: getDefaultPlayerStats(), ownerUserId: user?.id || null, linkedEmail: user?.email || null };
+        return {
+          id: player.id || crypto.randomUUID(),
+          name: String(player.name || "").trim(),
+          stats: normalizePlayerStats(player.stats),
+          ownerUserId: player.ownerUserId || null,
+          linkedEmail: player.linkedEmail || null
+        };
+      }).filter((player) => player.name);
 
-  ensureDefaultAdminPlayer();
-
-  state.savedPlayers = state.savedPlayers.filter((player) => {
-    if (state.isAdminUser) return true;
-    return player.ownerUserId === user.id || String(player.linkedEmail || "").toLowerCase() === String(user.email || "").toLowerCase();
-  });
+  await ensureDefaultAdminPlayer();
+  state.savedPlayers = await fetchPlayersFromDatabase();
   state.savedPlayers.sort((a, b) => a.name.localeCompare(b.name, "da"));
+  saveToStorage(STORAGE_KEYS.savedPlayers, state.savedPlayers);
 
-  state.draft = loadFromStorage(STORAGE_KEYS.draft, state.draft);
+  state.draft = (state.isAdminUser && (await loadActiveTournamentFromDatabase())) || loadFromStorage(STORAGE_KEYS.draft, state.draft);
   state.draft = migrateTournamentData({ ...state.draft, players: state.draft.players || [], matches: state.draft.matches || [] });
   syncDraftPlayersWithDatabase();
   if (!Number.isInteger(state.draft.courts) || state.draft.courts < 1) state.draft.courts = 1;
@@ -1806,10 +1944,10 @@ async function initializeAppForUser(user) {
   if (state.isAdminUser) await refreshPendingPlayerApprovalsFromRemote();
 }
 
-savedPlayerForm.addEventListener("submit", (event) => {
+savedPlayerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!requireAdminAccess()) return;
-  const result = registerPlayerInDatabase(savedPlayerInput.value);
+  const result = await registerPlayerInDatabase(savedPlayerInput.value);
   if (result.reason === "empty") return;
   if (result.reason === "exists") {
     alert("Spilleren findes allerede i din liste.");
@@ -1904,10 +2042,10 @@ logoutBtn?.addEventListener("click", handleLogout);
 savedPlayerSelect?.addEventListener("change", async () => {
   await addSelectedPlayerToDraft(savedPlayerSelect.value.trim());
 });
-publicSignupForm?.addEventListener("submit", (event) => {
+publicSignupForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!requireAdminAccess()) return;
-  const result = registerPlayerInDatabase(publicSignupNameInput?.value);
+  const result = await registerPlayerInDatabase(publicSignupNameInput?.value);
   if (result.reason === "empty") return;
   if (result.reason === "exists") return alert("Spilleren findes allerede i databasen.");
   publicSignupForm.reset();

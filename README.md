@@ -10,8 +10,10 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 - Spillerdatabase
 - Single-bane og double-bane Mexicano
 - Klassisk eller rangliste-turnering
-- Aktiv turnering + historik gemmes i Supabase (`public.app_state`)
-- Browseren bruges ikke som lokal backup for spillerdata eller aktiv turnering
+- Spillerdatabase gemmes i Supabase-tabellen `public.players`
+- Aktiv turnering gemmes i `public.active_tournaments`, og afsluttede turneringer gemmes i `public.tournaments`
+- Rangliste læses fra spillerstatistik i databasen og overlever derfor refresh/gen-login
+- `public.app_state` bruges kun til fælles hjælpe-data som spilleranmodninger
 
 ## Konfiguration
 
@@ -37,9 +39,14 @@ Kør SQL-filerne i denne rækkefølge:
 3. `supabase/migrations/20260313_backfill_profiles.sql`
 4. `supabase/migrations/20260316_public_app_state.sql`
 5. `supabase/migrations/20260317_invite_admin_and_player_sync.sql`
+6. `supabase/migrations/20260321_player_stats_and_history.sql`
 
 ## Lokal kørsel
+
+Appen er en statisk frontend, så lokal kørsel betyder bare, at du starter en lille webserver til HTML/CSS/JS-filerne. Supabase er stadig databasen i skyen.
 
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0
 ```
+
+Åbn derefter `http://localhost:8080` i browseren.
