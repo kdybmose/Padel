@@ -5,7 +5,7 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 ## Funktioner
 
 - Login-side ved første åbning (Supabase Auth) med login, registrering og glemt adgangskode
-- Nye brugere kan sende en spilleranmodning, som admin godkender i spillerdatabasen
+- Nye brugere kan oprette konto selv og bliver automatisk oprettet i spillerdatabasen
 - Kristian Dybmose (dybmose@hotmail.com) er eneste admin
 - Spillerdatabase
 - Single-bane og double-bane Mexicano
@@ -13,7 +13,7 @@ Mobilvenlig webapp til Mexicano-turneringer, hvor data gemmes i Supabase.
 - Spillerdatabase gemmes i Supabase-tabellen `public.players`
 - Aktiv turnering gemmes i `public.active_tournaments`, og afsluttede turneringer gemmes i `public.tournaments`
 - Rangliste læses fra spillerstatistik i databasen og overlever derfor refresh/gen-login
-- `public.app_state` bruges kun til fælles hjælpe-data som spilleranmodninger
+- `public.app_state` bruges kun til fælles hjælpe-data
 
 ## Konfiguration
 
@@ -27,7 +27,7 @@ window.SUPABASE_ANON_KEY = "YOUR_PUBLISHABLE_KEY";
 Bemærk:
 
 - Redigering af turneringer/spillere gives kun til admin-brugeren `dybmose@hotmail.com`.
-- Nye login-brugere kan oprette konto selv og sender derefter en spilleranmodning til admin, som kan godkende eller afvise den i spillerdatabasen.
+- Nye login-brugere kan oprette konto selv. Når kontoen oprettes, bliver spilleren automatisk synkroniseret til `public.players`.
 - Bekræftelses- og invitationsmails sendes tilbage til den aktuelle app-URL. Den URL skal også være tilladt under Supabase Auth -> URL Configuration.
 
 ## Supabase migrationer
@@ -40,6 +40,7 @@ Kør SQL-filerne i denne rækkefølge:
 4. `supabase/migrations/20260316_public_app_state.sql`
 5. `supabase/migrations/20260317_invite_admin_and_player_sync.sql`
 6. `supabase/migrations/20260321_player_stats_and_history.sql`
+7. `supabase/migrations/20260322_backfill_existing_auth_users_to_players.sql`
 
 ## Lokal kørsel
 

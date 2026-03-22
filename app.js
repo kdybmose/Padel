@@ -1787,7 +1787,7 @@ function updateRoleBasedUi() {
   setVisible(mobileActionBar, admin);
   setVisible(savedPlayerForm, admin);
   setVisible(dbInviteForm, admin);
-  setVisible(publicSignupCard, admin);
+  setVisible(publicSignupCard, false);
   renderPendingPlayerApprovals();
 }
 
@@ -1844,25 +1844,12 @@ async function handleRegister(event) {
   const createdUser = data.user;
   if (createdUser) {
     await initializeAppForUser(createdUser);
-    const requestResult = createPendingPlayerApproval({
-      userId: createdUser.id,
-      name: name || email,
-      email
-    });
-    if (requestResult.reason === "exists") {
-      setAuthStatus("Din konto er oprettet, og du har allerede en spillerprofil.", false);
-      registerForm.reset();
-      return;
-    }
-    if (requestResult.reason === "pending") {
-      setAuthStatus("Din konto er oprettet. Din spilleranmodning afventer allerede godkendelse fra admin.", false);
-      registerForm.reset();
-      return;
-    }
+    setAuthStatus("Registrering gennemført. Din spillerprofil oprettes automatisk, når din konto er aktiv.", false);
+  } else {
+    setAuthStatus("Registrering gennemført. Tjek din e-mail for at aktivere kontoen.", false);
   }
 
   registerForm.reset();
-  setAuthStatus("Registrering gennemført. Din spilleranmodning er sendt til admin til godkendelse.");
 }
 
 async function handleForgotPassword() {
@@ -1941,7 +1928,6 @@ async function initializeAppForUser(user) {
   renderSchedule();
   renderStandings();
   renderHome();
-  if (state.isAdminUser) await refreshPendingPlayerApprovalsFromRemote();
 }
 
 savedPlayerForm.addEventListener("submit", async (event) => {
@@ -2019,13 +2005,11 @@ homeTab.addEventListener("click", () => setActiveView("home"));
 currentTab.addEventListener("click", () => setActiveView("current"));
 playersTab.addEventListener("click", async () => {
   setActiveView("players");
-  if (hasAdminAccess()) await refreshPendingPlayerApprovalsFromRemote();
 });
 mobileHomeTab.addEventListener("click", () => setActiveView("home"));
 mobileCurrentTab.addEventListener("click", () => setActiveView("current"));
 mobilePlayersTab.addEventListener("click", async () => {
   setActiveView("players");
-  if (hasAdminAccess()) await refreshPendingPlayerApprovalsFromRemote();
 });
 mobileGenerateBtn.addEventListener("click", generateMexicanoTournament);
 mobileAddRoundBtn.addEventListener("click", addRounds);
@@ -2041,15 +2025,6 @@ forgotPasswordBtn?.addEventListener("click", handleForgotPassword);
 logoutBtn?.addEventListener("click", handleLogout);
 savedPlayerSelect?.addEventListener("change", async () => {
   await addSelectedPlayerToDraft(savedPlayerSelect.value.trim());
-});
-publicSignupForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!requireAdminAccess()) return;
-  const result = await registerPlayerInDatabase(publicSignupNameInput?.value);
-  if (result.reason === "empty") return;
-  if (result.reason === "exists") return alert("Spilleren findes allerede i databasen.");
-  publicSignupForm.reset();
-  alert("Tak for din registrering! Spilleren er oprettet i databasen.");
 });
 dbInviteForm?.addEventListener("submit", handleDatabaseInvite);
 playerEditorForm?.addEventListener("submit", handlePlayerEditorSave);
