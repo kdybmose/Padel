@@ -167,6 +167,21 @@ function getAdminPlayerOwnerId() {
   return state.currentUser?.id || null;
 }
 
+async function fetchCurrentUserProfile() {
+  const client = getSupabaseClient();
+  if (!client || !state.currentUser?.id) return null;
+  const { data, error } = await client
+    .from('profiles')
+    .select('id, email, role')
+    .eq('id', state.currentUser.id)
+    .maybeSingle();
+  if (error) {
+    console.warn('Kunne ikke hente brugerprofil fra databasen:', error);
+    return null;
+  }
+  return data || null;
+}
+
 function normalizeDatabasePlayer(row = {}) {
   return {
     id: row.id || crypto.randomUUID(),
@@ -431,11 +446,17 @@ function hasAdminAccess() {
   return state.isAdminUser;
 }
 
+function getAdminLabel() {
+  const email = String(state.currentUser?.email || '').trim().toLowerCase();
+  if (email) return email;
+  return 'admin';
+}
+
 function updateAdminAccessUi() {
   if (!adminAccessStatus || !adminAccessBtn) return;
 
   if (state.isAdminUser) {
-    adminAccessStatus.textContent = "Admin-adgang aktiv (Kristian Dybmose).";
+    adminAccessStatus.textContent = `Admin-adgang aktiv (${getAdminLabel()}).`;
     adminAccessBtn.textContent = "Admin";
     adminAccessBtn.disabled = true;
     return;
@@ -448,7 +469,7 @@ function updateAdminAccessUi() {
 
 function requireAdminAccess() {
   if (hasAdminAccess()) return true;
-  alert("Kun Kristian Dybmose (admin) har adgang til denne handling.");
+  alert("Kun brugere med admin-rolle har adgang til denne handling.");
   return false;
 }
 
@@ -1887,7 +1908,8 @@ async function handleLogout() {
 
 async function initializeAppForUser(user) {
   state.currentUser = user;
-  state.isAdminUser = isKristianAdmin(user?.email);
+  const profile = await fetchCurrentUserProfile();
+  state.isAdminUser = profile?.role === 'admin' || isKristianAdmin(user?.email);
   state.pendingPlayerApprovals = loadGlobalStorage(GLOBAL_STORAGE_KEYS.pendingPlayerApprovals, [])
     .map(normalizePendingPlayerApproval)
     .filter(Boolean);
