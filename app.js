@@ -1844,7 +1844,7 @@ async function handleRegister(event) {
   const createdUser = data.user;
   if (createdUser) {
     await initializeAppForUser(createdUser);
-    setAuthStatus("Registrering gennemført. Din spillerprofil oprettes automatisk, når din konto er aktiv.", false);
+    setAuthStatus("Registrering gennemført. Bekræft din e-mail, og log derefter ind for at færdiggøre din profil.", false);
   } else {
     setAuthStatus("Registrering gennemført. Tjek din e-mail for at aktivere kontoen.", false);
   }
